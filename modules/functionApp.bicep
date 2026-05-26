@@ -82,6 +82,16 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'APP_SECRET'
           value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=app-secret)'
         }
+        // Enable remote build during zip deploy so `npm install` runs and
+        // node_modules (e.g. @azure/data-tables) end up on the function host.
+        {
+          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+          value: 'true'
+        }
+        {
+          name: 'ENABLE_ORYX_BUILD'
+          value: 'true'
+        }
       ]
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'

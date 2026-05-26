@@ -1,5 +1,5 @@
 # ============================================================
-# deploy.ps1 — One-click deployment for Student Portfolio Platform
+# deploy.ps1 - One-click deployment for Student Portfolio Platform
 # ============================================================
 
 param(
@@ -7,7 +7,7 @@ param(
     [string]$Location = "centralindia"
 )
 
-Write-Host "=== Student Portfolio Platform — Deploy ===" -ForegroundColor Cyan
+Write-Host "=== Student Portfolio Platform - Deploy ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Prompt for app secret
@@ -17,11 +17,11 @@ $plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
 )
 
 # Create resource group
-Write-Host "`n[1/4] Creating Resource Group: $ResourceGroup..." -ForegroundColor Yellow
+Write-Host "`n[1/5] Creating Resource Group: $ResourceGroup..." -ForegroundColor Yellow
 az group create --name $ResourceGroup --location $Location --output none
 
 # Deploy Bicep
-Write-Host "[2/4] Deploying Bicep template (~2-3 minutes)..." -ForegroundColor Yellow
+Write-Host "[2/5] Deploying Bicep template (~2-3 minutes)..." -ForegroundColor Yellow
 $result = az deployment group create `
     --resource-group $ResourceGroup `
     --template-file "$PSScriptRoot\main.bicep" `
@@ -33,7 +33,7 @@ if ($LASTEXITCODE -eq 0) {
     $funcUrl = $result.functionAppUrl.value
     $funcName = ($funcUrl -replace 'https://', '') -replace '\.azurewebsites\.net', ''
 
-    Write-Host "[3/4] Deployment successful!" -ForegroundColor Green
+    Write-Host "[3/5] Bicep deployment successful!" -ForegroundColor Green
     Write-Host ""
     Write-Host "=== Outputs ===" -ForegroundColor Cyan
     Write-Host "Function App URL: $funcUrl"
@@ -42,30 +42,39 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Storage Account:  $($result.storageAccountName.value)"
     Write-Host ""
 
-    # Seed profile data into Table Storage
-    Write-Host "[4/4] Seeding profile data into Table Storage..." -ForegroundColor Yellow
-    $storageAccount = $result.storageAccountName.value
-    $storageKey = (az storage account keys list --resource-group $ResourceGroup --account-name $storageAccount --query "[0].value" -o tsv)
+    # ----- Deploy function code (zip from src/api) -----
+    Write-Host "[4/5] Packaging and deploying function code..." -ForegroundColor Yellow
+    $apiSrc = Join-Path $PSScriptRoot 'src\api'
+    $zipPath = Join-Path $env:TEMP "portfolio-api-$(Get-Date -Format 'yyyyMMddHHmmss').zip"
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    Compress-Archive -Path (Join-Path $apiSrc '*') -DestinationPath $zipPath -Force
+    az functionapp deployment source config-zip `
+        --resource-group $ResourceGroup `
+        --name $funcName `
+        --src $zipPath `
+        --build-remote true `
+        --output none
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Function code deploy failed." -ForegroundColor Red
+    } else {
+        Write-Host "Function code deployed." -ForegroundColor Green
+    }
 
-    az storage entity insert `
-        --account-name $storageAccount `
-        --account-key $storageKey `
-        --table-name profiles `
-        --entity PartitionKey=portfolio RowKey=saurav `
-            name="Saurav Ganguly" `
-            title="Cloud Engineering Student" `
-            about="Learning cloud infrastructure with Azure for Students. Building serverless APIs and managing IaC with Bicep." `
-            skills='["Azure","Bicep","IaC","DevOps","Python","Node.js"]' `
-            github="https://github.com/saurav" `
-            linkedin="" `
-        --output none 2>$null
+    # ----- Seed profile via the dedicated script (handles JSON quoting) -----
+    Write-Host "[5/5] Seeding profile data..." -ForegroundColor Yellow
+    $seedScript = Join-Path $PSScriptRoot 'scripts\seed-profile.ps1'
+    if (Test-Path $seedScript) {
+        & $seedScript -ResourceGroup $ResourceGroup -FunctionApp $funcName
+    } else {
+        Write-Host "seed-profile.ps1 not found, skipping seed." -ForegroundColor Yellow
+    }
 
-    Write-Host "Profile data seeded!" -ForegroundColor Green
     Write-Host ""
     Write-Host "=== Test Your API ===" -ForegroundColor Cyan
     Write-Host "  curl $funcUrl/api/profile"
     Write-Host "  curl -X POST $funcUrl/api/contact -H 'Content-Type: application/json' -d '{""name"":""Test"",""email"":""test@test.com"",""message"":""Hello""}'"
     Write-Host ""
+    Write-Host "Smoke test: .\scripts\smoke-test.ps1" -ForegroundColor Cyan
     Write-Host "To destroy: .\destroy.ps1" -ForegroundColor Yellow
 } else {
     Write-Host "`nDeployment failed. Check errors above." -ForegroundColor Red

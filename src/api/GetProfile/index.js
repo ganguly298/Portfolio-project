@@ -43,7 +43,7 @@ module.exports = async function (context, req) {
                     title: 'Cloud Engineering Student',
                     about: 'Learning cloud infrastructure with Azure for Students. Building serverless APIs and managing IaC with Bicep.',
                     skills: ['Azure', 'Bicep', 'IaC', 'DevOps', 'Python', 'Node.js'],
-                    github: 'https://github.com/saurav',
+                    github: 'https://github.com/ganguly298',
                     linkedin: ''
                 }
             }
