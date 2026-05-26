@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Portfolio Platform</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1 id="profile-name">Loading...</h1>
+        <p id="profile-title"></p>
+    </header>
+
+    <main>
+        <section id="about-section">
+            <h2>About Me</h2>
+            <p id="profile-about"></p>
+        </section>
+
+        <section id="skills-section">
+            <h2>Skills</h2>
+            <div id="skills-container"></div>
+        </section>
+
+        <section id="architecture-section">
+            <h2>How This Works</h2>
+            <div class="architecture-info">
+                <p>This page is served by <strong>Azure Static Web App</strong> (free tier).</p>
+                <p>Profile data comes from a <strong>Function App</strong> that queries a 
+                   <strong>PostgreSQL database on a Windows VM</strong> through a private VNet connection.</p>
+                <p>The VM has <strong>no public IP</strong> — only the Function App can reach it via the internal network.</p>
+            </div>
+        </section>
+
+        <section id="contact-section">
+            <h2>Contact Me</h2>
+            <form id="contact-form">
+                <input type="text" id="contact-name" placeholder="Your Name" required>
+                <input type="email" id="contact-email" placeholder="Your Email" required>
+                <textarea id="contact-message" placeholder="Your Message" required></textarea>
+                <button type="submit">Send Message</button>
+            </form>
+            <p id="contact-status"></p>
+        </section>
+    </main>
+
+    <footer>
+        <p>Built with Azure for Students | Bicep IaC | &lt; $0.10 total cost</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
