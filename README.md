@@ -41,15 +41,15 @@
 
 ### Prerequisites
 
-- Azure CLI installed (`az --version`)
-- Azure for Students subscription active
-- Node.js 18+ (for local Function App development)
-- Azure Functions Core Tools (`npm i -g azure-functions-core-tools@4`)
+- Azure CLI installed (`az --version`) and logged in (`az login`)
+- Azure for Students subscription active (`az account set --subscription <id>`)
+- PowerShell 5.1+ (Windows) — used by `deploy.ps1` / `destroy.ps1` / `scripts/*`
+- *(Optional)* Node.js 18+ and Azure Functions Core Tools (`npm i -g azure-functions-core-tools@4`) — only needed for **local** Function App development. `deploy.ps1` publishes the code via `az` zip-deploy, so they aren't required for cloud deployment.
 
 ### Deploy (one command)
 
 ```powershell
-cd student-portfolio-platform
+cd Portfolio-project
 .\deploy.ps1
 ```
 
@@ -57,8 +57,9 @@ The script will:
 1. Ask for an app secret (stored in Key Vault)
 2. Create the resource group in Central India
 3. Deploy all Bicep resources (~2-3 minutes)
-4. Seed your profile data into Table Storage
-5. Print API URLs for testing
+4. Package `src/api` and publish it to the Function App (zip-deploy with remote `npm install`)
+5. Seed your profile data into Table Storage
+6. Print API URLs for testing
 
 ### Test the API
 
@@ -72,12 +73,22 @@ curl -X POST https://<function-app-name>.azurewebsites.net/api/contact `
   -d '{"name":"Test User","email":"test@example.com","message":"Hello from curl!"}'
 ```
 
-### Deploy Function Code
+### Deploy Function Code (manual / re-deploy only)
+
+`deploy.ps1` already publishes the function code. Use this only if you change `src/api` and want to re-deploy without re-running Bicep:
 
 ```powershell
 cd src\api
 func azure functionapp publish <function-app-name>
 ```
+
+### Smoke test (end-to-end validation)
+
+```powershell
+.\scripts\smoke-test.ps1
+```
+
+Verifies the RG, Function App state, app settings, tables, seeded profile, `GET /api/profile`, `POST /api/contact` (including persistence and 400-validation).
 
 ### Destroy (stop all charges)
 
@@ -88,7 +99,7 @@ func azure functionapp publish <function-app-name>
 ## 📂 Project Structure
 
 ```
-student-portfolio-platform/
+Portfolio-project/
 ├── main.bicep                  # Root orchestrator (5 modules)
 ├── modules/
 │   ├── storage.bicep           # Storage Account + Table Storage tables
@@ -97,18 +108,22 @@ student-portfolio-platform/
 │   ├── logicApp.bicep          # Logic App (contact notifier)
 │   └── monitoring.bicep        # Application Insights
 ├── parameters/
-│   └── dev.bicepparam          # Environment parameters
+│   └── dev.bicepparam          # Environment parameters (reference; deploy.ps1 passes params inline)
 ├── src/api/
 │   ├── host.json               # Functions host config
-│   ├── package.json            # Node.js dependencies
+│   ├── package.json            # Node.js dependencies (@azure/data-tables)
 │   ├── GetProfile/             # GET /api/profile
 │   │   ├── function.json
 │   │   └── index.js
 │   └── SubmitContact/          # POST /api/contact
 │       ├── function.json
 │       └── index.js
-├── deploy.ps1                  # One-click deploy + seed data
-├── destroy.ps1                 # One-click cleanup
+├── scripts/
+│   ├── seed-profile.ps1        # Seeds the 'profiles' table (called by deploy.ps1)
+│   └── smoke-test.ps1          # End-to-end validation of the deployed stack
+├── deploy.ps1                  # One-click deploy + publish code + seed data
+├── destroy.ps1                 # One-click cleanup (deletes the resource group)
+├── azure-for-students-plan.md  # Cost/credit planning notes
 └── README.md
 ```
 

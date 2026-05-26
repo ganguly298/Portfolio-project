@@ -11,7 +11,7 @@ Write-Host "=== Student Portfolio Platform — Destroy ===" -ForegroundColor Red
 Write-Host ""
 Write-Host "This will PERMANENTLY delete:" -ForegroundColor Yellow
 Write-Host "  - Resource Group: $ResourceGroup"
-Write-Host "  - ALL resources inside it (VM, VNet, Functions, Key Vault, etc.)"
+Write-Host "  - ALL resources inside it (Storage, Function App, Key Vault, Logic App, App Insights)"
 Write-Host ""
 
 $confirm = Read-Host "Type 'yes' to confirm destruction"
