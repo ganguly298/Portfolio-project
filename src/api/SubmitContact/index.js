@@ -1,6 +1,7 @@
 /**
- * SubmitContact — Receives contact form data and triggers Logic App
+ * SubmitContact — Saves contact form data to Table Storage + triggers Logic App
  */
+const { TableClient } = require('@azure/data-tables');
 const https = require('https');
 
 module.exports = async function (context, req) {
@@ -9,18 +10,37 @@ module.exports = async function (context, req) {
     if (!name || !email || !message) {
         context.res = {
             status: 400,
+            headers: { 'Content-Type': 'application/json' },
             body: { error: 'Missing required fields: name, email, message' }
         };
         return;
     }
 
-    // Forward to Logic App HTTP trigger
-    const logicAppUrl = process.env.LOGIC_APP_CALLBACK_URL;
+    // Save to Table Storage
+    try {
+        const connectionString = process.env.TABLE_STORAGE_CONNECTION;
+        const tableClient = TableClient.fromConnectionString(connectionString, 'contacts');
 
+        await tableClient.createEntity({
+            partitionKey: 'contact',
+            rowKey: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: name,
+            email: email,
+            message: message,
+            submittedAt: new Date().toISOString()
+        });
+
+        context.log(`Contact saved from: ${email}`);
+    } catch (err) {
+        context.log.error('Table Storage write failed:', err.message);
+    }
+
+    // Forward to Logic App HTTP trigger (if configured)
+    const logicAppUrl = process.env.LOGIC_APP_CALLBACK_URL;
     if (logicAppUrl) {
         try {
             await postToLogicApp(logicAppUrl, { name, email, message });
-            context.log(`Contact form forwarded to Logic App from: ${email}`);
+            context.log('Contact forwarded to Logic App');
         } catch (err) {
             context.log.warn('Logic App trigger failed:', err.message);
         }

@@ -1,6 +1,6 @@
 // ============================================================
-// functionApp.bicep — The Modern API (Azure Functions)
-// VNet integrated into Room B, reads secrets from Key Vault
+// functionApp.bicep — The API (Azure Functions, Y1 Consumption)
+// No VNet integration — uses Table Storage as database
 // ============================================================
 
 @description('Azure region')
@@ -19,13 +19,13 @@ param storageAccountKey string
 @description('App Insights instrumentation key')
 param appInsightsInstrumentationKey string
 
-@description('Subnet ID for Room B (subnet-functions)')
-param functionSubnetId string
-
 @description('Key Vault name for secret references')
 param keyVaultName string
 
-// Consumption plan (free tier)
+@description('Storage connection string for Table Storage access')
+param storageConnectionString string
+
+// Consumption plan (Y1 — free tier, 1M executions/month)
 resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${functionAppName}-plan'
   location: location
@@ -38,7 +38,7 @@ resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   }
 }
 
-// Function App with VNet integration
+// Function App — public endpoint, no VNet
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
@@ -48,7 +48,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   }
   properties: {
     serverFarmId: hostingPlan.id
-    virtualNetworkSubnetId: functionSubnetId
     siteConfig: {
       appSettings: [
         {
@@ -76,29 +75,22 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: appInsightsInstrumentationKey
         }
         {
-          name: 'DB_HOST'
-          value: '10.0.1.4' // VM private IP (first available in subnet-vm)
+          name: 'TABLE_STORAGE_CONNECTION'
+          value: storageConnectionString
         }
         {
-          name: 'DB_PORT'
-          value: '5432'
-        }
-        {
-          name: 'DB_USER'
-          value: 'saurav'
-        }
-        {
-          name: 'DB_PASSWORD'
-          value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=db-password)'
-        }
-        {
-          name: 'DB_NAME'
-          value: 'portfolio'
+          name: 'APP_SECRET'
+          value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=app-secret)'
         }
       ]
-      vnetRouteAllEnabled: true
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
+      cors: {
+        allowedOrigins: [
+          'https://portal.azure.com'
+          'http://localhost:3000'
+        ]
+      }
     }
     httpsOnly: true
   }

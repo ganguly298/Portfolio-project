@@ -1,6 +1,6 @@
 // ============================================================
-// keyVault.bicep — The Safe (Key Vault for secrets)
-// Stores VM DB credentials for Function App to retrieve
+// keyVault.bicep — The Safe (Key Vault for secrets management)
+// Demonstrates storing and retrieving secrets securely
 // ============================================================
 
 @description('Azure region')
@@ -10,8 +10,8 @@ param location string
 param kvName string
 
 @secure()
-@description('VM admin password to store as secret')
-param vmAdminPassword string
+@description('Application secret to store')
+param appSecret string
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: kvName
@@ -31,15 +31,15 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// Store the DB password as a secret
-resource dbPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+// Store the app secret
+resource secret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
-  name: 'db-password'
+  name: 'app-secret'
   properties: {
-    value: vmAdminPassword
+    value: appSecret
   }
 }
 
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
-output dbPasswordSecretUri string = dbPasswordSecret.properties.secretUri
+output secretUri string = secret.properties.secretUri

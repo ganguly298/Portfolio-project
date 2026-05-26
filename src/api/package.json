@@ -1,0 +1,12 @@
+{
+  "name": "student-portfolio-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API for Student Portfolio Platform",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"Call endpoints manually with curl\""
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.2.2"
+  }
+}
