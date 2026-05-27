@@ -112,7 +112,7 @@ flowchart TB
         direction TB
 
         subgraph Frontend["🌐 Frontend Hosting"]
-            BlobWeb["Storage Account – $web container<br/>(Static Website endpoint:<br/>https://&lt;sa&gt;.z29.web.core.windows.net)"]
+            BlobWeb["Storage Account – web container<br/>(Static Website endpoint:<br/>https://STORAGE.z29.web.core.windows.net)"]
             StaticFiles["index.html · app.js · style.css · config.js"]
             BlobWeb --- StaticFiles
         end
@@ -123,10 +123,10 @@ flowchart TB
             FuncApp -.hosted on.-> Plan
         end
 
-        subgraph Data["💾 Storage / Data (same Storage Account as $web)"]
+        subgraph Data["💾 Storage / Data (same Storage Account as the web container)"]
             StAcct["Storage Account<br/>StorageV2 · Standard_LRS · TLS1.2"]
             TableProfiles["Table: profiles<br/>PK=portfolio · RK=saurav"]
-            TableContacts["Table: contacts<br/>PK=contact · RK=&lt;ts&gt;-&lt;rand&gt;"]
+            TableContacts["Table: contacts<br/>PK=contact · RK=timestamp-random"]
             StAcct --> TableProfiles
             StAcct --> TableContacts
         end
@@ -150,10 +150,10 @@ flowchart TB
     Browser -->|fetch /api/profile<br/>fetch /api/contact| FuncApp
     BlobWeb -.serves JS that calls.-> FuncApp
 
-    FuncApp -->|TABLE_STORAGE_CONNECTION<br/>read 'profiles'| TableProfiles
-    FuncApp -->|TABLE_STORAGE_CONNECTION<br/>write 'contacts'| TableContacts
+    FuncApp -->|TABLE_STORAGE_CONNECTION<br/>read profiles| TableProfiles
+    FuncApp -->|TABLE_STORAGE_CONNECTION<br/>write contacts| TableContacts
     FuncApp -->|POST JSON payload<br/>LOGIC_APP_CALLBACK_URL| LogicApp
-    FuncApp -->|@Microsoft.KeyVault reference<br/>via Managed Identity| KV
+    FuncApp -->|Microsoft.KeyVault reference<br/>via Managed Identity| KV
     FuncApp -->|APPINSIGHTS_<br/>INSTRUMENTATIONKEY| AppInsights
     LogicApp -.workflow run telemetry.-> AppInsights
 
@@ -392,24 +392,24 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as 👤 Browser
-    participant W as 🌐 Storage $web<br/>(static site)
-    participant J as 📜 app.js (runs in browser)
-    participant API as ⚡ Function App API
+    participant U as Browser
+    participant W as Storage Static Site (web container)
+    participant J as app.js (in browser)
+    participant API as Function App API
 
-    U->>W: GET https://&lt;sa&gt;.z29.web.core.windows.net/
+    U->>W: GET https://STORAGE.z29.web.core.windows.net/
     W-->>U: index.html + style.css + config.js + app.js
 
     Note over U,J: Browser parses HTML,<br/>loads config.js then app.js
     J->>J: read window.PORTFOLIO_CONFIG.apiBaseUrl
-    J->>+API: GET {apiBaseUrl}/api/profile
-    API-->>-J: { success, source, data }
-    J->>J: renderProfile() → name, title, about, skills, github
+    J->>+API: GET apiBaseUrl + /api/profile
+    API-->>-J: success, source, data
+    J->>J: renderProfile — name, title, about, skills, github
 
-    U->>J: submits #contact-form
-    J->>+API: POST {apiBaseUrl}/api/contact<br/>{ name, email, message }
-    API-->>-J: { success, message }
-    J->>U: update #form-status pill
+    U->>J: submits the contact form
+    J->>+API: POST apiBaseUrl + /api/contact<br/>name, email, message
+    API-->>-J: success, message
+    J->>U: update form-status pill
 ```
 
 > **CORS** is configured in [modules/functionApp.bicep](modules/functionApp.bicep) (`allowedOrigins` defaults to `portal.azure.com` and `localhost:3000`); `deploy.ps1` appends the live static-site URL with `az functionapp cors add`.
@@ -423,20 +423,20 @@ How the Function App reads `app-secret` from Key Vault **without ever seeing a p
 ```mermaid
 sequenceDiagram
     autonumber
-    participant F as ⚡ Function App<br/>(System-Assigned MI)
-    participant AAD as 🛡️ Azure AD<br/>(IMDS endpoint)
-    participant KV as 🔐 Key Vault<br/>(RBAC enabled)
-    participant App as 📦 App Settings<br/>(APP_SECRET)
+    participant F as Function App (System-Assigned MI)
+    participant AAD as Azure AD (IMDS endpoint)
+    participant KV as Key Vault (RBAC enabled)
+    participant App as App Settings (APP_SECRET)
 
-    Note over F,App: At Function App startup / setting refresh
-    F->>App: read APP_SECRET =<br/>@Microsoft.KeyVault(VaultName=...;SecretName=app-secret)
-    App->>+AAD: request token<br/>(resource=https://vault.azure.net)
-    AAD-->>-App: AAD access token<br/>(scoped to the App's MI principal)
-    App->>+KV: GET /secrets/app-secret<br/>Authorization: Bearer &lt;token&gt;
-    KV->>KV: RBAC check<br/>(MI must have "Key Vault Secrets User")
+    Note over F,App: At Function App startup or setting refresh
+    F->>App: read APP_SECRET (Microsoft.KeyVault reference,<br/>VaultName=kv, SecretName=app-secret)
+    App->>+AAD: request token (resource=vault.azure.net)
+    AAD-->>-App: AAD access token (scoped to MI principal)
+    App->>+KV: GET /secrets/app-secret<br/>Authorization Bearer token
+    KV->>KV: RBAC check (MI must have Key Vault Secrets User)
     KV-->>-App: secret value
-    App-->>F: resolved env var APP_SECRET=&lt;value&gt;
-    Note over F: Function code reads<br/>process.env.APP_SECRET<br/>— no credential in source
+    App-->>F: resolved env var APP_SECRET = secret value
+    Note over F: Function code reads process.env.APP_SECRET<br/>— no credential in source
 ```
 
 > **Heads-up (one thing the Bicep does *not* do today):** the Function App's Managed Identity is created, but the RBAC role assignment giving it `Key Vault Secrets User` on the vault is **not** present in [modules/keyVault.bicep](modules/keyVault.bicep). If you rely on `APP_SECRET` at runtime, add a `Microsoft.Authorization/roleAssignments` resource granting the MI's principal ID that role — otherwise the reference resolves to an unresolved placeholder. The rest of the app does not depend on this secret today, so it remains a teaching example.
