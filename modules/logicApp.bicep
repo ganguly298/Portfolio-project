@@ -35,6 +35,18 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
         }
       }
       actions: {
+        Log_Contact_Received: {
+          type: 'Compose'
+          inputs: {
+            timestamp: '@{utcNow()}'
+            contactName: '@{coalesce(triggerBody()?[\'name\'], \'(missing)\')}'
+            contactEmail: '@{coalesce(triggerBody()?[\'email\'], \'(missing)\')}'
+            contactMessage: '@{coalesce(triggerBody()?[\'message\'], \'(missing)\')}'
+            notification: 'New contact form submission received!'
+            debug_rawBody: '@{string(triggerBody())}'
+          }
+          runAfter: {}
+        }
         Response: {
           type: 'Response'
           kind: 'Http'
@@ -43,7 +55,13 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
             body: {
               status: 'received'
               message: 'Contact form submitted successfully'
+              processedAt: '@{utcNow()}'
             }
+          }
+          runAfter: {
+            Log_Contact_Received: [
+              'Succeeded'
+            ]
           }
         }
       }

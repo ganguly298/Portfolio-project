@@ -52,6 +52,16 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
+// ─── The Notifier (Logic App — Consumption) ──────────────────
+// Deploy this first so we can pass its callback URL to the Function App
+module logicApp 'modules/logicApp.bicep' = {
+  name: 'deploy-logicapp'
+  params: {
+    location: location
+    logicAppName: logicAppName
+  }
+}
+
 // ─── The API (Function App — Y1 Consumption) ─────────────────
 module functionApp 'modules/functionApp.bicep' = {
   name: 'deploy-functionapp'
@@ -63,15 +73,7 @@ module functionApp 'modules/functionApp.bicep' = {
     appInsightsInstrumentationKey: monitoring.outputs.instrumentationKey
     keyVaultName: keyVault.outputs.keyVaultName
     storageConnectionString: storage.outputs.storageConnectionString
-  }
-}
-
-// ─── The Notifier (Logic App — Consumption) ──────────────────
-module logicApp 'modules/logicApp.bicep' = {
-  name: 'deploy-logicapp'
-  params: {
-    location: location
-    logicAppName: logicAppName
+    logicAppCallbackUrl: logicApp.outputs.logicAppCallbackUrl
   }
 }
 

@@ -25,6 +25,9 @@ param keyVaultName string
 @description('Storage connection string for Table Storage access')
 param storageConnectionString string
 
+@description('Logic App callback URL for contact notifications')
+param logicAppCallbackUrl string = ''
+
 @description('Allowed CORS origins for the Function App')
 param allowedOrigins array = [
   'https://portal.azure.com'
@@ -87,6 +90,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'APP_SECRET'
           value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=app-secret)'
+        }
+        {
+          name: 'LOGIC_APP_CALLBACK_URL'
+          value: logicAppCallbackUrl
         }
         // Enable remote build during zip deploy so `npm install` runs and
         // node_modules (e.g. @azure/data-tables) end up on the function host.

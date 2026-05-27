@@ -2,7 +2,6 @@
  * SubmitContact — Saves contact form data to Table Storage + triggers Logic App
  */
 const { TableClient } = require('@azure/data-tables');
-const https = require('https');
 
 module.exports = async function (context, req) {
     const { name, email, message } = req.body || {};
@@ -39,11 +38,21 @@ module.exports = async function (context, req) {
     const logicAppUrl = process.env.LOGIC_APP_CALLBACK_URL;
     if (logicAppUrl) {
         try {
-            await postToLogicApp(logicAppUrl, { name, email, message });
-            context.log('Contact forwarded to Logic App');
+            const payload = JSON.stringify({ name, email, message });
+            const response = await fetch(logicAppUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload).toString()
+                },
+                body: payload
+            });
+            context.log(`Logic App responded with status: ${response.status}`);
         } catch (err) {
             context.log.warn('Logic App trigger failed:', err.message);
         }
+    } else {
+        context.log.warn('LOGIC_APP_CALLBACK_URL not configured');
     }
 
     context.res = {
@@ -55,22 +64,3 @@ module.exports = async function (context, req) {
         }
     };
 };
-
-function postToLogicApp(url, data) {
-    return new Promise((resolve, reject) => {
-        const parsedUrl = new URL(url);
-        const options = {
-            hostname: parsedUrl.hostname,
-            path: parsedUrl.pathname + parsedUrl.search,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        };
-        const req = https.request(options, (res) => {
-            res.on('data', () => {});
-            res.on('end', () => resolve());
-        });
-        req.on('error', reject);
-        req.write(JSON.stringify(data));
-        req.end();
-    });
-}

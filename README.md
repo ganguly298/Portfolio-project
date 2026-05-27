@@ -138,7 +138,7 @@ flowchart TB
         end
 
         subgraph Workflow["🔄 Workflow"]
-            LogicApp["Logic App (Consumption)<br/>HTTP Trigger → Response 200"]
+            LogicApp["Logic App (Consumption)<br/>HTTP Trigger → Compose (log+debug) → Response 200<br/>(callback URL injected at deploy time)"]
         end
 
         subgraph Observability["📊 Observability"]
@@ -209,8 +209,11 @@ All resources live inside one resource group (`rg-portfolio-dev`) in **Central I
 - **Defined in:** [modules/keyVault.bicep](modules/keyVault.bicep)
 
 ### 4. Logic App (Consumption) — *the notifier / workflow*
-- **What it is:** An HTTP-triggered workflow that the Function App POSTs to whenever a new contact is submitted. The trigger expects a JSON schema with `name`, `email`, and `message`, and currently just responds `200 OK { status: "received" }`.
-- **Why it's here:** Shows how to extend an app with no-code/low-code automation. Today it just acks; you can easily extend it to send an email, post to Teams/Slack, or call any API — without touching the Function code.
+- **What it is:** An HTTP-triggered workflow that the Function App POSTs to whenever a new contact is submitted. The trigger expects a JSON schema with `name`, `email`, and `message`. The workflow has two actions:
+  1. **`Log_Contact_Received`** (Compose) — uses `coalesce(triggerBody()?['name'], '(missing)')`-style **safe-navigation** expressions plus a `debug_rawBody` field (`@{string(triggerBody())}`) so you can inspect the exact payload that arrived in the run history.
+  2. **`Response`** — returns `200 OK { status: "received", message: "Contact form submitted successfully", processedAt: "<utc>" }` to the caller. Declares `runAfter: { Log_Contact_Received: ['Succeeded'] }` so the response only fires once the log step completes.
+- **Wiring:** The workflow's **callback URL** is produced at deploy time via `listCallbackUrl()` and threaded through [main.bicep](main.bicep) into the Function App's `LOGIC_APP_CALLBACK_URL` app setting — no manual step required.
+- **Why it's here:** Shows how to extend an app with no-code/low-code automation. Today it logs + acks; you can easily extend it to send an email, post to Teams/Slack, or call any API — without touching the Function code.
 - **Cost:** Free for the first ~4,000 actions/month.
 - **Defined in:** [modules/logicApp.bicep](modules/logicApp.bicep)
 
@@ -237,7 +240,7 @@ Portfolio-project/
 │   ├── storage.bicep                # Storage Account + tableServices + profiles/contacts tables
 │   ├── functionApp.bicep            # Y1 plan + Function App + Managed Identity + app settings
 │   ├── keyVault.bicep               # Key Vault (RBAC, soft-delete) + the demo app-secret
-│   ├── logicApp.bicep               # Consumption Logic App with HTTP trigger + Response
+│   ├── logicApp.bicep               # Consumption Logic App: HTTP trigger + Compose (debug) + Response
 │   └── monitoring.bicep             # Application Insights component
 ├── parameters/
 │   └── dev.bicepparam               # Reference parameter file (deploy.ps1 passes params inline)
@@ -269,13 +272,13 @@ Portfolio-project/
 | [modules/storage.bicep](modules/storage.bicep) | Provisions Storage v2 + Table Service + `profiles` & `contacts` tables, exports keys & connection string. |
 | [modules/functionApp.bicep](modules/functionApp.bicep) | Y1 plan + Function App with MI, all app settings (incl. `@Microsoft.KeyVault` reference), CORS, HTTPS-only. |
 | [modules/keyVault.bicep](modules/keyVault.bicep) | RBAC-enabled vault + single secret `app-secret`. Outputs name & URI. |
-| [modules/logicApp.bicep](modules/logicApp.bicep) | Inline JSON workflow: HTTP trigger validating `{name,email,message}` → 200 Response. |
+| [modules/logicApp.bicep](modules/logicApp.bicep) | Inline JSON workflow: HTTP trigger validating `{name,email,message}` → Compose action (`coalesce` + `debug_rawBody`) → 200 Response. Outputs `logicAppCallbackUrl`. |
 | [modules/monitoring.bicep](modules/monitoring.bicep) | App Insights component (web kind, 30d retention). Outputs instrumentation key. |
 | [parameters/dev.bicepparam](parameters/dev.bicepparam) | Sample parameter file; the real `appSecret` is injected at deploy time. |
 | [src/api/host.json](src/api/host.json) | Functions runtime v4 + extension bundle + App Insights sampling. |
 | [src/api/package.json](src/api/package.json) | One runtime dep: `@azure/data-tables`. |
 | [src/api/GetProfile/index.js](src/api/GetProfile/index.js) | Reads entity `portfolio/saurav` from `profiles`; on miss returns default payload with `source: "default"`. |
-| [src/api/SubmitContact/index.js](src/api/SubmitContact/index.js) | Validates body → inserts into `contacts` → optional POST to Logic App → returns `{success, message}`. |
+| [src/api/SubmitContact/index.js](src/api/SubmitContact/index.js) | Validates body → inserts into `contacts` → POSTs `{name,email,message}` to Logic App via Node 18's built-in `fetch()` with explicit `Content-Length` → returns `{success, message}`. |
 | [src/frontend/index.html](src/frontend/index.html) | Markup with `#profile-name`, `#skills-list`, `#contact-form`, etc. Loads `config.js` then `app.js`. |
 | [src/frontend/app.js](src/frontend/app.js) | On load → `GET /api/profile` and render; on submit → `POST /api/contact`. |
 | [src/frontend/config.js](src/frontend/config.js) | Holds `window.PORTFOLIO_CONFIG.apiBaseUrl` — regenerated by `deploy.ps1`. |
@@ -298,12 +301,13 @@ flowchart TB
     Main -->|module deploy-monitoring| Mon["modules/monitoring.bicep<br/>Microsoft.Insights/components"]
     Main -->|module deploy-keyvault| KV["modules/keyVault.bicep<br/>Microsoft.KeyVault/vaults<br/>+ secrets/app-secret"]
     Main -->|module deploy-storage| St["modules/storage.bicep<br/>Microsoft.Storage/storageAccounts<br/>+ tableServices/tables<br/>(profiles, contacts)"]
-    Main -->|module deploy-functionapp| Fn["modules/functionApp.bicep<br/>Microsoft.Web/serverfarms (Y1)<br/>+ Microsoft.Web/sites<br/>+ SystemAssigned identity"]
-    Main -->|module deploy-logicapp| La["modules/logicApp.bicep<br/>Microsoft.Logic/workflows<br/>(HTTP trigger + Response)"]
+    Main -->|module deploy-logicapp| La["modules/logicApp.bicep<br/>Microsoft.Logic/workflows<br/>(HTTP trigger + Compose + Response)"]
+    Main -->|module deploy-functionapp<br/>depends on La| Fn["modules/functionApp.bicep<br/>Microsoft.Web/serverfarms (Y1)<br/>+ Microsoft.Web/sites<br/>+ SystemAssigned identity"]
 
     Mon -.outputs<br/>instrumentationKey, appInsightsId.-> Fn
     KV  -.outputs<br/>keyVaultName, keyVaultUri.-> Fn
     St  -.outputs<br/>storageAccountName, storageAccountKey,<br/>storageConnectionString.-> Fn
+    La  -.outputs<br/>logicAppCallbackUrl.-> Fn
 
     Main -.emits.-> Out["📤 functionAppUrl<br/>📤 frontendUrl (static $web)<br/>📤 keyVaultUri<br/>📤 logicAppEndpoint<br/>📤 storageAccountName"]
 
@@ -315,7 +319,7 @@ flowchart TB
     class Out output
 ```
 
-> The Function App module has **three implicit dependencies** (Storage, Key Vault, Monitoring) — Bicep figures out the deploy order automatically from the `params:` block. The Logic App is independent and deploys in parallel.
+> The Function App module now has **four implicit dependencies** (Storage, Key Vault, Monitoring, **and Logic App**) — Bicep figures out the deploy order automatically from the `params:` block. The Logic App deploys first so its `listCallbackUrl()` output can be passed to the Function App as `LOGIC_APP_CALLBACK_URL`.
 
 ---
 
@@ -360,7 +364,7 @@ sequenceDiagram
     participant U as 👤 User
     participant F as ⚡ Function App<br/>SubmitContact
     participant T as 💾 Table Storage<br/>contacts
-    participant L as 🔄 Logic App<br/>HTTP Trigger
+    participant L as 🔄 Logic App<br/>HTTP Trigger + Compose + Response
     participant AI as 📊 App Insights
 
     U->>+F: POST /api/contact<br/>{ name, email, message }
@@ -370,11 +374,10 @@ sequenceDiagram
     else Valid payload
         F->>+T: createEntity({<br/>  partitionKey: 'contact',<br/>  rowKey: `${Date.now()}-${rand}`,<br/>  name, email, message, submittedAt<br/>})
         T-->>-F: row inserted
-        opt LOGIC_APP_CALLBACK_URL is set
-            F->>+L: POST { name, email, message }
-            L->>L: workflow runs (extendable:<br/>email / Teams / Slack)
-            L-->>-F: 200 OK<br/>{ status: "received" }
-        end
+        Note over F: payload = JSON.stringify({name,email,message})<br/>fetch(LOGIC_APP_CALLBACK_URL, { method:'POST',<br/>headers:{ Content-Type, Content-Length },<br/>body: payload })
+        F->>+L: POST { name, email, message }<br/>Content-Length set explicitly
+        L->>L: Compose: { contactName, contactEmail,<br/>contactMessage, debug_rawBody } via<br/>coalesce(triggerBody()?['x'], '(missing)')
+        L-->>-F: 200 OK<br/>{ status: "received",<br/>  message: "Contact form submitted successfully",<br/>  processedAt: "<utc>" }
         F-->>U: 200 OK<br/>{ success:true,<br/>  message: "Thank you {name}, your message has been received!" }
     end
 
@@ -383,7 +386,9 @@ sequenceDiagram
     deactivate F
 ```
 
-> **Note:** the Logic App's callback URL isn't wired into the Function App by Bicep today — `LOGIC_APP_CALLBACK_URL` is an optional env var. To wire it up, add an `appSettings` entry referencing `logicApp.outputs.logicAppCallbackUrl` in [modules/functionApp.bicep](modules/functionApp.bicep). The current code is **resilient** to it being absent.
+> **Why `fetch()` + explicit `Content-Length`?** Node's older `https.request()` API streams the body with **chunked transfer encoding** (no `Content-Length` header). The Logic App HTTP trigger does not parse chunked bodies as JSON, so `triggerBody()` returns `null` and downstream expressions fail. Using Node 18's built-in `fetch()` with `Content-Length: Buffer.byteLength(payload)` makes the request a normal content-length-terminated POST that Logic Apps parses correctly.
+>
+> **Debugging tip:** the Compose action's `debug_rawBody` field is `@{string(triggerBody())}` — open the latest run in the Azure portal → click `Log_Contact_Received` → if `debug_rawBody` contains the full JSON, the wiring is healthy. If it's empty or `null`, the Function App isn't sending the body correctly (check Application Insights).
 
 ---
 
@@ -628,7 +633,7 @@ Prompts for `yes`, then runs `az group delete --yes --no-wait`. Resources disapp
 | `@secure()` decorator | `main.bicep` (`appSecret`), `keyVault.bicep`, `functionApp.bicep` (`storageAccountKey`) |
 | `@description()` decorator | Every param in every module |
 | `uniqueString(resourceGroup().id)` | Globally unique resource names in `main.bicep` |
-| `module` references with output threading | `main.bicep` → 5 modules |
+| `module` references with output threading | `main.bicep` → 5 modules (Logic App → Function App for callback URL) |
 | `targetScope = 'resourceGroup'` | `main.bicep` |
 | System-Assigned **Managed Identity** | `functionApp.bicep` (`identity: { type: 'SystemAssigned' }`) |
 | **Key Vault references** in app settings | `@Microsoft.KeyVault(VaultName=...;SecretName=app-secret)` in `functionApp.bicep` |
@@ -670,6 +675,8 @@ Prompts for `yes`, then runs `az group delete --yes --no-wait`. Resources disapp
 | Key Vault deployment fails with soft-delete name conflict | Names are reused across deletes for 7 days. Wait, purge the vault, or change `projectName`. |
 | `APP_SECRET` env var resolves to literal `@Microsoft.KeyVault(...)` | The Function App's Managed Identity is missing the `Key Vault Secrets User` RBAC role on the vault (see note in [Key Vault reference flow](#4-key-vault-reference-resolution-startuprefresh)). |
 | Frontend loads but profile says "Missing API base URL" | `config.js` wasn't regenerated. Re-run `deploy.ps1` (stage 5) or manually edit `config.js` in `$web` to set `apiBaseUrl`. |
+| Logic App run shows `contactName`, `contactEmail`, `contactMessage` as `(missing)` or `null` | The Function App is sending the body with chunked transfer encoding instead of a fixed `Content-Length` header, so `triggerBody()` is `null`. The current `SubmitContact/index.js` uses `fetch()` with an explicit `Content-Length` to avoid this. If you customise the call, **always set `Content-Length: Buffer.byteLength(payload)`**. Inspect the `debug_rawBody` field in the Compose action's output \u2014 it should contain the literal JSON string. |
+| `LOGIC_APP_CALLBACK_URL` env var is empty in the Function App | Bicep deploy order issue. `logicApp` module must deploy before `functionApp` so `listCallbackUrl()` is available. The current [main.bicep](main.bicep) declares them in the correct order; if you reorder, the Function App will get an empty string. |
 
 ---
 
