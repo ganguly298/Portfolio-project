@@ -25,6 +25,12 @@ param keyVaultName string
 @description('Storage connection string for Table Storage access')
 param storageConnectionString string
 
+@description('Allowed CORS origins for the Function App')
+param allowedOrigins array = [
+  'https://portal.azure.com'
+  'http://localhost:3000'
+]
+
 // Consumption plan (Y1 — free tier, 1M executions/month)
 resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${functionAppName}-plan'
@@ -96,10 +102,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       cors: {
-        allowedOrigins: [
-          'https://portal.azure.com'
-          'http://localhost:3000'
-        ]
+        allowedOrigins: allowedOrigins
       }
     }
     httpsOnly: true

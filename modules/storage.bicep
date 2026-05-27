@@ -43,3 +43,4 @@ resource contactTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
 output storageAccountName string = storageAccount.name
 output storageAccountKey string = storageAccount.listKeys().keys[0].value
 output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
+output staticWebsiteUrl string = storageAccount.properties.primaryEndpoints.web

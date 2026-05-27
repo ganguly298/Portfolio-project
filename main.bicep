@@ -77,6 +77,7 @@ module logicApp 'modules/logicApp.bicep' = {
 
 // ─── Outputs ─────────────────────────────────────────────────
 output functionAppUrl string = functionApp.outputs.functionAppUrl
+output frontendUrl string = storage.outputs.staticWebsiteUrl
 output keyVaultUri string = keyVault.outputs.keyVaultUri
 output logicAppEndpoint string = logicApp.outputs.logicAppEndpoint
 output storageAccountName string = storage.outputs.storageAccountName
