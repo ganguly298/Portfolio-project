@@ -1,6 +1,8 @@
 // ============================================================
-// functionApp.bicep — The API (Azure Functions, Y1 Consumption)
-// No VNet integration — uses Table Storage as database
+// functionApp.bicep — The API (Azure Functions, Flex Consumption)
+// Linux, Node 20, identity-based AzureWebJobsStorage,
+// app package pulled from a blob container via system-assigned MI.
+// No content file share, no storage keys anywhere.
 // ============================================================
 
 @description('Azure region')
@@ -9,21 +11,17 @@ param location string
 @description('Function App name')
 param functionAppName string
 
-@description('Storage account name')
+@description('Storage account name (used for table I/O and AzureWebJobsStorage)')
 param storageAccountName string
 
-@secure()
-@description('Storage account key')
-param storageAccountKey string
+@description('Blob container URL Flex Consumption pulls the app package from')
+param deploymentStorageContainerUrl string
 
 @description('App Insights instrumentation key')
 param appInsightsInstrumentationKey string
 
-@description('Key Vault name for secret references')
+@description('Key Vault name for app-secret KV reference')
 param keyVaultName string
-
-@description('Storage connection string for Table Storage access')
-param storageConnectionString string
 
 @description('Logic App callback URL for contact notifications')
 param logicAppCallbackUrl string = ''
@@ -34,58 +32,68 @@ param allowedOrigins array = [
   'http://localhost:3000'
 ]
 
-// Consumption plan (Y1 — free tier, 1M executions/month)
+// Flex Consumption plan (FC1) — Linux only
 resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${functionAppName}-plan'
   location: location
+  kind: 'functionapp'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'FC1'
+    tier: 'FlexConsumption'
   }
   properties: {
-    reserved: false
+    reserved: true
   }
 }
 
-// Function App — public endpoint, no VNet
+// Function App — Flex Consumption, Linux, MI-based storage
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
-  kind: 'functionapp'
+  kind: 'functionapp,linux'
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
     serverFarmId: hostingPlan.id
+    httpsOnly: true
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: deploymentStorageContainerUrl
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 100
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'node'
+        version: '20'
+      }
+    }
     siteConfig: {
       appSettings: [
+        // Identity-based AzureWebJobsStorage — no connection string, no key.
         {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=core.windows.net'
+          name: 'AzureWebJobsStorage__accountName'
+          value: storageAccountName
         }
         {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};AccountKey=${storageAccountKey};EndpointSuffix=core.windows.net'
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'node'
-        }
-        {
-          name: 'WEBSITE_NODE_DEFAULT_VERSION'
-          value: '~18'
+          name: 'AzureWebJobsStorage__credential'
+          value: 'managedidentity'
         }
         {
           name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
           value: appInsightsInstrumentationKey
         }
         {
-          name: 'TABLE_STORAGE_CONNECTION'
-          value: storageConnectionString
+          name: 'STORAGE_ACCOUNT_NAME'
+          value: storageAccountName
         }
         {
           name: 'APP_SECRET'
@@ -95,16 +103,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'LOGIC_APP_CALLBACK_URL'
           value: logicAppCallbackUrl
         }
-        // Enable remote build during zip deploy so `npm install` runs and
-        // node_modules (e.g. @azure/data-tables) end up on the function host.
-        {
-          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'true'
-        }
-        {
-          name: 'ENABLE_ORYX_BUILD'
-          value: 'true'
-        }
       ]
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
@@ -112,9 +110,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         allowedOrigins: allowedOrigins
       }
     }
-    httpsOnly: true
   }
 }
 
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
+output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId

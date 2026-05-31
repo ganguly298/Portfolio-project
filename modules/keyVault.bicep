@@ -1,38 +1,35 @@
 // ============================================================
-// keyVault.bicep — The Safe (Key Vault for secrets management)
-// Demonstrates storing and retrieving secrets securely
+// keyVault.bicep — Holds the application secret.
+// (No storage connection string secret — Flex Consumption uses
+// managed identity for both runtime AzureWebJobsStorage and table I/O.)
 // ============================================================
 
 @description('Azure region')
 param location string
 
-@description('Key Vault name (globally unique)')
+@description('Key Vault name (must be globally unique, 3-24 chars)')
 param kvName string
 
 @secure()
-@description('Application secret to store')
+@description('App secret to store in Key Vault')
 param appSecret string
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: kvName
   location: location
   properties: {
+    tenantId: subscription().tenantId
     sku: {
       family: 'A'
       name: 'standard'
     }
-    tenantId: subscription().tenantId
     enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 7
-    enabledForDeployment: false
     enabledForTemplateDeployment: true
-    enabledForDiskEncryption: false
+    softDeleteRetentionInDays: 7
   }
 }
 
-// Store the app secret
-resource secret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource appSecretEntry 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'app-secret'
   properties: {
@@ -42,4 +39,4 @@ resource secret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
-output secretUri string = secret.properties.secretUri
+output appSecretName string = appSecretEntry.name

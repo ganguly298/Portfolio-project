@@ -1,7 +1,7 @@
 // ============================================================
 // main.bicep — Root orchestrator for Student Portfolio Platform
-// Deploys: Storage, Key Vault, Function App (Y1), Logic App, App Insights
-// Serverless & near-zero cost on Azure for Students
+// Flex Consumption Functions + Table Storage + Key Vault + Logic App + App Insights
+// No storage keys leave the storage account — runtime is identity-only.
 // ============================================================
 
 targetScope = 'resourceGroup'
@@ -16,7 +16,6 @@ param projectName string = 'portfolio'
 @description('A secret value to store in Key Vault (demonstrates secrets management)')
 param appSecret string
 
-// Unique suffix for globally unique names
 var uniqueSuffix = uniqueString(resourceGroup().id)
 var kvName = '${projectName}kv${uniqueSuffix}'
 var storageAccountName = '${projectName}st${uniqueSuffix}'
@@ -43,7 +42,7 @@ module keyVault 'modules/keyVault.bicep' = {
   }
 }
 
-// ─── Storage Account (Functions backend + Table Storage as DB) ─
+// ─── Storage Account (tables + deployment container + $web) ──
 module storage 'modules/storage.bicep' = {
   name: 'deploy-storage'
   params: {
@@ -53,7 +52,6 @@ module storage 'modules/storage.bicep' = {
 }
 
 // ─── The Notifier (Logic App — Consumption) ──────────────────
-// Deploy this first so we can pass its callback URL to the Function App
 module logicApp 'modules/logicApp.bicep' = {
   name: 'deploy-logicapp'
   params: {
@@ -62,24 +60,43 @@ module logicApp 'modules/logicApp.bicep' = {
   }
 }
 
-// ─── The API (Function App — Y1 Consumption) ─────────────────
+// ─── The API (Function App — Flex Consumption, MI-based) ─────
 module functionApp 'modules/functionApp.bicep' = {
   name: 'deploy-functionapp'
   params: {
     location: location
     functionAppName: functionAppName
     storageAccountName: storage.outputs.storageAccountName
-    storageAccountKey: storage.outputs.storageAccountKey
+    deploymentStorageContainerUrl: storage.outputs.deploymentContainerUrl
     appInsightsInstrumentationKey: monitoring.outputs.instrumentationKey
     keyVaultName: keyVault.outputs.keyVaultName
-    storageConnectionString: storage.outputs.storageConnectionString
     logicAppCallbackUrl: logicApp.outputs.logicAppCallbackUrl
+  }
+}
+
+// ─── RBAC: Function App MI → Storage data-plane roles ─────────
+module storageRoleAssignment 'modules/storageRoleAssignment.bicep' = {
+  name: 'deploy-storage-rbac'
+  params: {
+    storageAccountName: storage.outputs.storageAccountName
+    principalId: functionApp.outputs.functionAppPrincipalId
+  }
+}
+
+// ─── RBAC: Function App MI → Key Vault Secrets User ───────────
+module kvRoleAssignment 'modules/kvRoleAssignment.bicep' = {
+  name: 'deploy-kv-rbac'
+  params: {
+    keyVaultName: keyVault.outputs.keyVaultName
+    principalId: functionApp.outputs.functionAppPrincipalId
   }
 }
 
 // ─── Outputs ─────────────────────────────────────────────────
 output functionAppUrl string = functionApp.outputs.functionAppUrl
+output functionAppName string = functionApp.outputs.functionAppName
 output frontendUrl string = storage.outputs.staticWebsiteUrl
 output keyVaultUri string = keyVault.outputs.keyVaultUri
 output logicAppEndpoint string = logicApp.outputs.logicAppEndpoint
 output storageAccountName string = storage.outputs.storageAccountName
+output deploymentContainerName string = storage.outputs.deploymentContainerName

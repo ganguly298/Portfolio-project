@@ -1,12 +1,13 @@
 {
   "name": "student-portfolio-api",
   "version": "1.0.0",
-  "description": "Azure Functions API for Student Portfolio Platform",
+  "description": "Azure Functions API for Student Portfolio Platform (Flex Consumption, MI)",
   "scripts": {
     "start": "func start",
     "test": "echo \"Call endpoints manually with curl\""
   },
   "dependencies": {
-    "@azure/data-tables": "^13.2.2"
+    "@azure/data-tables": "^13.2.2",
+    "@azure/identity": "^4.0.1"
   }
 }

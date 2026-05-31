@@ -7,6 +7,7 @@ const profileAbout = document.getElementById('profile-about');
 const profileJson = document.getElementById('profile-json');
 const statusPill = document.getElementById('status-pill');
 const githubLink = document.getElementById('github-link');
+const linkedinLink = document.getElementById('linkedin-link');
 const skillsList = document.getElementById('skills-list');
 const form = document.getElementById('contact-form');
 const formStatus = document.getElementById('form-status');
@@ -75,6 +76,11 @@ function renderProfile(result) {
     profileAbout.textContent = profile.about || '';
     githubLink.href = profile.github || '#';
     githubLink.textContent = profile.github ? 'GitHub Profile' : 'GitHub unavailable';
+    if (linkedinLink) {
+        linkedinLink.href = profile.linkedin || '#';
+        linkedinLink.textContent = profile.linkedin ? 'LinkedIn Profile' : 'LinkedIn unavailable';
+        linkedinLink.style.display = profile.linkedin ? '' : 'none';
+    }
 
     statusPill.textContent = `Source: ${result.source}`;
     statusPill.classList.toggle('ok', result.source === 'table-storage');
