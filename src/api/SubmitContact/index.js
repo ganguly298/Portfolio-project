@@ -1,7 +1,11 @@
 /**
- * SubmitContact — Saves contact form data to Table Storage + triggers Logic App
+ * SubmitContact — Saves contact form data to Table Storage (via managed identity)
+ * and triggers the Logic App.
  */
 const { TableClient } = require('@azure/data-tables');
+const { DefaultAzureCredential } = require('@azure/identity');
+
+const credential = new DefaultAzureCredential();
 
 module.exports = async function (context, req) {
     const { name, email, message } = req.body || {};
@@ -15,10 +19,16 @@ module.exports = async function (context, req) {
         return;
     }
 
-    // Save to Table Storage
     try {
-        const connectionString = process.env.TABLE_STORAGE_CONNECTION;
-        const tableClient = TableClient.fromConnectionString(connectionString, 'contacts');
+        const accountName = process.env.STORAGE_ACCOUNT_NAME;
+        if (!accountName) {
+            throw new Error('STORAGE_ACCOUNT_NAME not configured');
+        }
+        const tableClient = new TableClient(
+            `https://${accountName}.table.core.windows.net`,
+            'contacts',
+            credential
+        );
 
         await tableClient.createEntity({
             partitionKey: 'contact',
@@ -34,7 +44,6 @@ module.exports = async function (context, req) {
         context.log.error('Table Storage write failed:', err.message);
     }
 
-    // Forward to Logic App HTTP trigger (if configured)
     const logicAppUrl = process.env.LOGIC_APP_CALLBACK_URL;
     if (logicAppUrl) {
         try {

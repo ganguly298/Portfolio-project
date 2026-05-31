@@ -1,15 +1,24 @@
 /**
- * GetProfile — Reads profile data from Azure Table Storage
- * No VNet needed — Function App connects to Table Storage via connection string
+ * GetProfile — Reads profile data from Azure Table Storage using managed identity.
+ * No connection string, no storage keys: TableClient + DefaultAzureCredential.
  */
 const { TableClient } = require('@azure/data-tables');
+const { DefaultAzureCredential } = require('@azure/identity');
+
+const credential = new DefaultAzureCredential();
 
 module.exports = async function (context, req) {
     try {
-        const connectionString = process.env.TABLE_STORAGE_CONNECTION;
-        const tableClient = TableClient.fromConnectionString(connectionString, 'profiles');
+        const accountName = process.env.STORAGE_ACCOUNT_NAME;
+        if (!accountName) {
+            throw new Error('STORAGE_ACCOUNT_NAME not configured');
+        }
+        const tableClient = new TableClient(
+            `https://${accountName}.table.core.windows.net`,
+            'profiles',
+            credential
+        );
 
-        // Try to get profile from Table Storage
         const entity = await tableClient.getEntity('portfolio', 'saurav');
 
         context.res = {
@@ -44,7 +53,7 @@ module.exports = async function (context, req) {
                     about: 'Learning cloud infrastructure with Azure for Students. Building serverless APIs and managing IaC with Bicep.',
                     skills: ['Azure', 'Bicep', 'IaC', 'DevOps', 'Python', 'Node.js'],
                     github: 'https://github.com/ganguly298',
-                    linkedin: ''
+                    linkedin: 'https://www.linkedin.com/in/saurav-ganguly-8b1542279'
                 }
             }
         };

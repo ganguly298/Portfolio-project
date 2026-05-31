@@ -1,384 +1,397 @@
 # Student Portfolio Platform — Azure Bicep IaC Project
 
-> A beginner-friendly, end-to-end **serverless cloud project** for Microsoft Azure, built entirely with **Infrastructure as Code (Bicep)** and a handful of PowerShell scripts.
-> Runs on free / consumption tiers — total cost for a deploy → test → destroy cycle: **~$0.00** with the Azure for Students subscription.
+> A beginner-friendly, end-to-end **serverless cloud project** on Microsoft Azure, built entirely with **Infrastructure as Code (Bicep)** and a handful of PowerShell scripts.
+>
+> Runs on Azure's cheapest / free tiers — total cost for a deploy → test → destroy cycle: **~$0.00** on the Azure for Students subscription.
+>
+> **Architecture highlight:** zero secrets at runtime. The Function App talks to Storage and Key Vault using its **Managed Identity** — there is no storage connection string, no storage key, no password anywhere in the running app.
 
 ---
 
-## 📑 Table of Contents
+## Table of contents
 
-1. [What is this project?](#-what-is-this-project)
-2. [Concepts in plain English](#-concepts-in-plain-english)
-3. [Architecture overview](#%EF%B8%8F-architecture-overview)
-4. [Resources deployed](#-resources-deployed-what-each-one-is-and-why-its-here)
-5. [Repository layout (file-by-file)](#-repository-layout-file-by-file)
-6. [Bicep module graph](#-bicep-module-graph)
-7. [Communication flows](#-communication-flows-end-to-end)
-   - [GET /api/profile](#1-get-apiprofile--read-flow)
-   - [POST /api/contact](#2-post-apicontact--write--notify-flow)
-   - [Frontend → API](#3-frontend--api-flow)
-   - [Key Vault reference resolution](#4-key-vault-reference-resolution-startuprefresh)
-8. [Deployment pipeline](#-deployment-pipeline-deployps1)
-9. [Quick start](#-quick-start)
-10. [Testing](#-testing)
-11. [Destroy / cleanup](#-destroy--stop-all-charges)
-12. [Bicep concepts covered](#-bicep-concepts-covered)
-13. [Cost model](#-cost-model)
-14. [Troubleshooting](#-if-something-breaks-common-gotchas)
-15. [What you'll learn](#-what-youll-learn-by-reading--running-this)
-16. [References](#-references)
+1. [What this project does](#what-this-project-does)
+2. [Concepts in plain English](#concepts-in-plain-english)
+3. [Architecture overview](#architecture-overview)
+4. [Resources deployed](#resources-deployed)
+5. [Repository layout](#repository-layout)
+6. [Bicep module graph](#bicep-module-graph)
+7. [Communication flows](#communication-flows)
+8. [Deployment pipeline](#deployment-pipeline)
+9. [Quick start](#quick-start)
+10. [Testing](#testing)
+11. [Destroy / cleanup](#destroy--cleanup)
+12. [Why we migrated from Y1 Consumption to Flex Consumption](#why-we-migrated-from-y1-consumption-to-flex-consumption)
+13. [Cost model](#cost-model)
+14. [Troubleshooting](#troubleshooting)
+15. [What you'll learn](#what-youll-learn)
+16. [References](#references)
 
 ---
 
----
+## What this project does
 
-## 📖 What is this project?
+A tiny but complete cloud application for a personal portfolio website. Once deployed, you get:
 
-This project is a tiny but **complete cloud application** for a personal portfolio website. It's designed as a **learning project** — you can read every file, understand every Azure service involved, deploy it to your own subscription in ~5 minutes, play with it, then tear it down so it costs you nothing.
-
-Imagine the backend of a portfolio site like `yourname.dev` — it needs to:
-
-1. **Serve your profile** (name, bio, skills, links) to whoever visits the page.
-2. **Accept messages** from a "Contact Me" form and store them safely.
-3. **Notify you** when someone gets in touch.
-4. **Store secrets** (API keys, passwords) without hard-coding them.
-5. **Tell you** when something breaks.
-
-That's exactly what this project builds — using five small Azure services glued together with code, plus a static HTML/JS frontend hosted in the same storage account.
-
-### What does it actually *do*?
-
-Once deployed, you get:
-
-- A **static portfolio website** served from Azure Storage's `$web` container (HTTPS, free).
-- A **live HTTPS API** in the cloud with two endpoints:
+- A **static portfolio site** served from Azure Storage's `$web` container (HTTPS, free).
+- A **live HTTPS API** with two endpoints on Azure Functions:
 
 | Endpoint | Method | What it does |
 |---|---|---|
-| `/api/profile` | GET | Returns your portfolio data (name, title, about, skills, links) as JSON. |
-| `/api/contact` | POST | Accepts a JSON body `{name, email, message}`, saves it to a database, and notifies a Logic App workflow. |
+| `/api/profile` | `GET` | Returns your profile (name, title, about, skills, github, linkedin) as JSON. |
+| `/api/contact` | `POST` | Accepts `{name, email, message}`, saves it to Table Storage, and notifies a Logic App workflow. |
 
-The frontend calls these two endpoints to power the live portfolio site. No servers to manage, no VMs to patch, no monthly bill.
+The frontend calls both endpoints to render the portfolio and handle the contact form. No servers to manage, no VMs to patch.
 
-### What does it *show / teach*?
+**What this project teaches**
 
-This project is a hands-on tour of **modern cloud fundamentals**:
-
-- **Infrastructure as Code (IaC)** — your cloud setup lives in Git as `.bicep` files instead of being clicked together in a portal.
-- **Serverless compute** — Azure Functions runs your Node.js code only when someone calls the API (you pay per request, not per hour).
-- **NoSQL storage** — Azure Table Storage as a tiny, cheap, schemaless database.
-- **Static website hosting** — frontend served straight from a Storage Account at no extra cost.
-- **Secrets management** — Azure Key Vault + Managed Identity, so no passwords ever sit in your code.
-- **Workflow automation** — Azure Logic Apps as a low-code "if this, then that" engine.
+- **Infrastructure as Code (IaC)** — your Azure setup lives in Git as `.bicep` files.
+- **Serverless compute** — Azure Functions on **Flex Consumption (FC1, Linux, Node 20)**.
+- **NoSQL storage** — Azure Table Storage as a cheap, schemaless database.
+- **Static website hosting** — frontend served straight from a Storage Account.
+- **Managed identity** — zero-secret authentication between Azure services.
+- **Key Vault references** — secrets resolved at runtime via MI, never in source.
+- **Workflow automation** — Logic App (Consumption) as a low-code notifier.
 - **Observability** — Application Insights collects logs and metrics automatically.
-- **One-click deploy & destroy** — PowerShell scripts that wire everything up and tear it down.
-- **Smoke testing** — an automated end-to-end test that proves your live deployment actually works.
+- **One-click deploy/destroy** — hardened PowerShell scripts.
 
 ---
 
-## 🧠 Concepts in plain English
-
-If any of the buzzwords below are new, here's the 30-second version:
+## Concepts in plain English
 
 | Term | Plain-English meaning |
 |---|---|
-| **Cloud** | Someone else's computers (Microsoft's, in this case) that you rent by the second. |
-| **Resource Group** | A folder in Azure that holds all the resources for one project. Delete the folder → delete everything inside → bill stops. |
-| **Bicep** | A friendly language for describing Azure resources. You write what you want; Azure makes it real. Replaces clicking around the portal. |
-| **IaC (Infrastructure as Code)** | The idea that your cloud setup should be a file in Git, not a memory of clicks. Reproducible, reviewable, versioned. |
-| **Serverless** | You write functions; the cloud runs them on demand. You don't manage a server. When nobody calls your API, you pay $0. |
-| **Azure Function** | A small piece of code (here, Node.js) that runs in response to an HTTP request. |
-| **Table Storage** | A super-cheap NoSQL key/value store. Think "Excel-like rows with a partition + row key". Perfect for tiny apps. |
-| **Key Vault** | A secure safe for secrets (passwords, API keys, connection strings). |
-| **Managed Identity** | An Azure-provided identity for your app, so it can talk to other Azure services *without* a password. The cloud handles the auth for you. |
-| **Logic App** | A visual/JSON-defined workflow. "When X happens, do Y, then Z." Great for notifications, integrations, glue code. |
-| **Application Insights** | Auto-collects logs, errors, response times, and request counts from your app. Your "black box recorder". |
-| **Consumption / Y1 plan** | A pricing tier where you only pay per execution. Free for the first 1 million calls per month. |
-| **Static Website (`$web`)** | A special blob container on a Storage Account that serves files directly over HTTPS like a CDN — no web server needed. |
+| **Cloud** | Someone else's computers (Microsoft's, here) you rent by the second. |
+| **Resource Group** | A folder in Azure that holds everything for one project. Delete folder → delete everything → bill stops. |
+| **Bicep** | A friendly language to describe Azure resources. You write what you want, Azure makes it real. |
+| **IaC** | Your cloud setup is a file in Git, not a memory of clicks. Reproducible and versioned. |
+| **Serverless** | You write functions; the cloud runs them on demand. No servers to manage. |
+| **Flex Consumption (FC1)** | The newest serverless Functions plan: Linux only, scales to zero, supports identity-based storage and per-instance memory tuning. |
+| **Azure Function** | A small piece of Node.js (here) that runs in response to an HTTP request. |
+| **Table Storage** | A super-cheap NoSQL key/value store. "Rows with a partition key + row key." |
+| **Key Vault** | A secure safe for secrets (passwords, API keys). |
+| **Managed Identity (MI)** | An Azure-provided identity for your app, so it can talk to other Azure services **without a password**. Azure handles the auth. |
+| **RBAC** | Role-Based Access Control. You grant the MI roles like *Storage Table Data Contributor* and *Key Vault Secrets User* to allow exactly the actions it needs. |
+| **Logic App** | A visual/JSON-defined workflow. "When X happens, do Y, then Z." |
+| **Application Insights** | Auto-collects logs, errors, response times, requests from your app. |
+| **Static Website (`$web`)** | A special blob container that serves files directly over HTTPS like a CDN — no web server needed. |
 
 ---
 
-## 🏗️ Architecture overview
-
-End-to-end view of every component, who it talks to, and how the data flows.
+## Architecture overview
 
 ```mermaid
 flowchart TB
-    subgraph Client["👤 Client Layer"]
+    subgraph Client["Client"]
         Browser["Browser / curl / Postman"]
     end
 
-    subgraph Azure["☁️ Azure Resource Group: rg-portfolio-dev (Central India)"]
+    subgraph Azure["Azure Resource Group: rg-portfolio-dev (Central India)"]
         direction TB
 
-        subgraph Frontend["🌐 Frontend Hosting"]
-            BlobWeb["Storage Account – web container<br/>(Static Website endpoint:<br/>https://STORAGE.z29.web.core.windows.net)"]
-            StaticFiles["index.html · app.js · style.css · config.js"]
-            BlobWeb --- StaticFiles
+        subgraph Frontend["Frontend hosting"]
+            Web["Storage &dollar;web container<br/>https://STORAGE.z29.web.core.windows.net"]
+            Static["index.html · app.js · style.css · config.js"]
+            Web --- Static
         end
 
-        subgraph Compute["⚡ Serverless Compute"]
-            Plan["App Service Plan (Y1 Dynamic)"]
-            FuncApp["Function App<br/>Node.js 18<br/>System-Assigned Managed Identity<br/>GET /api/profile · POST /api/contact"]
-            FuncApp -.hosted on.-> Plan
+        subgraph Compute["Serverless compute"]
+            Plan["Flex Consumption plan (FC1, Linux)"]
+            Func["Function App (Node 20)<br/>System-Assigned Managed Identity<br/>GET /api/profile · POST /api/contact"]
+            Func -. hosted on .-> Plan
         end
 
-        subgraph Data["💾 Storage / Data (same Storage Account as the web container)"]
-            StAcct["Storage Account<br/>StorageV2 · Standard_LRS · TLS1.2"]
-            TableProfiles["Table: profiles<br/>PK=portfolio · RK=saurav"]
-            TableContacts["Table: contacts<br/>PK=contact · RK=timestamp-random"]
-            StAcct --> TableProfiles
-            StAcct --> TableContacts
+        subgraph Storage["Storage Account (one account, three roles)"]
+            St["StorageV2 · Standard_LRS · TLS 1.2 · HTTPS only"]
+            DepCt["blob container: deployment-package<br/>(Flex one-deploy app package)"]
+            WebCt["blob container: &dollar;web<br/>(static frontend)"]
+            TProfiles["table: profiles<br/>PK=portfolio · RK=saurav"]
+            TContacts["table: contacts<br/>PK=contact · RK=ts-rand"]
+            St --> DepCt
+            St --> WebCt
+            St --> TProfiles
+            St --> TContacts
         end
 
-        subgraph Secrets["🔐 Secrets"]
-            KV["Key Vault<br/>(RBAC, Soft-Delete 7d)"]
-            Secret["Secret: app-secret"]
-            KV --> Secret
+        subgraph Secrets["Secrets"]
+            KV["Key Vault (RBAC, soft-delete 7d)"]
+            Sec["secret: app-secret"]
+            KV --> Sec
         end
 
-        subgraph Workflow["🔄 Workflow"]
-            LogicApp["Logic App (Consumption)<br/>HTTP Trigger → Compose (log+debug) → Response 200<br/>(callback URL injected at deploy time)"]
+        subgraph Workflow["Workflow"]
+            Logic["Logic App (Consumption)<br/>HTTP trigger → Compose → 200 Response"]
         end
 
-        subgraph Observability["📊 Observability"]
-            AppInsights["Application Insights<br/>(logs · metrics · traces · failures)"]
+        subgraph Obs["Observability"]
+            AI["Application Insights"]
         end
     end
 
-    Browser -->|HTTPS GET index.html| BlobWeb
-    Browser -->|fetch /api/profile<br/>fetch /api/contact| FuncApp
-    BlobWeb -.serves JS that calls.-> FuncApp
+    Browser -->|GET index.html| Web
+    Browser -->|fetch /api/profile · POST /api/contact| Func
+    Web -. serves JS that calls .-> Func
 
-    FuncApp -->|TABLE_STORAGE_CONNECTION<br/>read profiles| TableProfiles
-    FuncApp -->|TABLE_STORAGE_CONNECTION<br/>write contacts| TableContacts
-    FuncApp -->|POST JSON payload<br/>LOGIC_APP_CALLBACK_URL| LogicApp
-    FuncApp -->|Microsoft.KeyVault reference<br/>via Managed Identity| KV
-    FuncApp -->|APPINSIGHTS_<br/>INSTRUMENTATIONKEY| AppInsights
-    LogicApp -.workflow run telemetry.-> AppInsights
+    Func -->|DefaultAzureCredential<br/>Table Data Contributor| TProfiles
+    Func -->|DefaultAzureCredential<br/>Table Data Contributor| TContacts
+    Func -->|AzureWebJobsStorage__credential=managedidentity<br/>Blob Data Owner| DepCt
+    Func -->|POST JSON<br/>LOGIC_APP_CALLBACK_URL| Logic
+    Func -->|KeyVault reference<br/>Secrets User role| KV
+    Func -->|APPINSIGHTS_INSTRUMENTATIONKEY| AI
 
-    classDef client fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
-    classDef compute fill:#fff3e0,stroke:#e65100,color:#bf360c
-    classDef data fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
-    classDef secret fill:#fce4ec,stroke:#ad1457,color:#880e4f
-    classDef workflow fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
-    classDef monitor fill:#ede7f6,stroke:#4527a0,color:#311b92
-    classDef frontend fill:#e0f7fa,stroke:#00838f,color:#006064
-
+    classDef client fill:#e3f2fd,stroke:#1565c0
+    classDef compute fill:#fff3e0,stroke:#e65100
+    classDef data fill:#e8f5e9,stroke:#2e7d32
+    classDef secret fill:#fce4ec,stroke:#ad1457
+    classDef workflow fill:#f3e5f5,stroke:#6a1b9a
+    classDef monitor fill:#ede7f6,stroke:#4527a0
+    classDef frontend fill:#e0f7fa,stroke:#00838f
     class Browser client
-    class FuncApp,Plan compute
-    class StAcct,TableProfiles,TableContacts data
-    class KV,Secret secret
-    class LogicApp workflow
-    class AppInsights monitor
-    class BlobWeb,StaticFiles frontend
+    class Func,Plan compute
+    class St,DepCt,WebCt,TProfiles,TContacts data
+    class KV,Sec secret
+    class Logic workflow
+    class AI monitor
+    class Web,Static frontend
 ```
 
-> **One subtle detail:** the same Storage Account hosts the Function App's runtime files (Azure Files share for `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`), the static website's `$web` container, **and** the two NoSQL tables. One bucket, three roles — that's why the design is the cheapest possible.
+The **same Storage Account** holds three things:
+
+1. The Flex Consumption **app package** (`deployment-package` blob container).
+2. The **static frontend** (`$web` blob container).
+3. The **NoSQL data** (`profiles` + `contacts` tables).
+
+The Function App accesses all three using its Managed Identity — no shared keys, no connection strings.
 
 ---
 
-## 📋 Resources deployed (what each one is and why it's here)
+## Resources deployed
 
-All resources live inside one resource group (`rg-portfolio-dev`) in **Central India**.
+All resources live inside one resource group (default `rg-portfolio-dev`) in **Central India**.
 
-### 1. Storage Account + Table Storage — *the database, the static host, and the Function runtime store*
-- **What it is:** A general-purpose v2 Storage Account (`Standard_LRS`, TLS 1.2 minimum, HTTPS only) that hosts:
-  - Two NoSQL **tables**: `profiles` (your portfolio data) and `contacts` (form submissions).
-  - The **`$web`** blob container that serves the static frontend (enabled by `deploy.ps1`).
-  - The **Azure Files share** that the Functions runtime uses for `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`.
-- **Why it's here:** Table Storage is the cheapest persistent database in Azure (literally fractions of a cent). Static website hosting is free on top of normal blob pricing. Reusing one account for all three roles keeps the architecture (and bill) minimal.
+### 1. Storage Account — *the database, the static host, and the app-package store*
+
+- **What:** General-purpose v2 Storage Account (`Standard_LRS`, TLS 1.2 minimum, HTTPS only).
+- **Holds:** `profiles` table (your portfolio data), `contacts` table (form submissions), `deployment-package` blob container (the Function App's deployed zip), and `$web` blob container (the frontend).
+- **Why one account:** cheapest possible design; one identity, one set of RBAC roles, one bill line.
 - **Cost:** ~$0.01/month at hobby scale.
 - **Defined in:** [modules/storage.bicep](modules/storage.bicep)
 
-### 2. Azure Functions (Y1 Consumption) — *the API*
-- **What it is:** A serverless Node.js 18 app exposing two HTTP endpoints (`GET /api/profile`, `POST /api/contact`).
-- **Key features:**
-  - **System-Assigned Managed Identity** — the App has its own Azure AD identity for talking to Key Vault without a password.
-  - **CORS** allowlist (Azure portal, `localhost:3000`, and the static-site URL added by `deploy.ps1`).
-  - `httpsOnly = true`, `minTlsVersion = '1.2'`, FTPS disabled.
-  - Remote build during zip deploy (`SCM_DO_BUILD_DURING_DEPLOYMENT=true`, `ENABLE_ORYX_BUILD=true`) so `npm install` runs on the cloud side.
-- **Why it's here:** It's the "brain" — receives HTTP requests, talks to Table Storage, calls the Logic App. Y1 plan = pay-per-execution.
-- **Cost:** Free for the first **1,000,000 executions/month**.
+### 2. Azure Functions (Flex Consumption, FC1) — *the API*
+
+- **What:** Linux Node 20 app exposing `GET /api/profile` and `POST /api/contact`.
+- **Plan:** Flex Consumption `FC1`. Scales 0 → many. Per-instance 2 GB memory, max 100 instances.
+- **Identity:** System-assigned Managed Identity. The app's principal ID is granted three storage roles + one Key Vault role.
+- **Storage binding:** identity-based — `AzureWebJobsStorage__accountName` + `AzureWebJobsStorage__credential=managedidentity`. **No `AzureWebJobsStorage` connection string anywhere.**
+- **Deployment model:** Flex "one deploy" — zip is uploaded to the `deployment-package` blob container, which the runtime pulls via the same MI.
+- **Cost:** Free for the first 1 million executions/month.
 - **Defined in:** [modules/functionApp.bicep](modules/functionApp.bicep)
 
 ### 3. Key Vault — *the safe*
-- **What it is:** A managed secret store with **RBAC** authorization, soft-delete (7 days), and a single demo secret (`app-secret`) created during deployment.
-- **Why it's here:** Demonstrates the production pattern of keeping secrets out of code/config files. The Function App reads it via an `@Microsoft.KeyVault(...)` reference using its Managed Identity — **no password ever touches your source code**.
-- **Cost:** Free for basic operations.
+
+- **What:** RBAC-enabled vault holding a single demo secret `app-secret` (set at deploy time, prompted by `deploy.ps1`).
+- **Why:** demonstrates Azure's production pattern of keeping secrets out of code. The Function App reads it via `APP_SECRET = @Microsoft.KeyVault(VaultName=...;SecretName=app-secret)` — resolved at startup by the platform using the MI.
+- **Soft-delete:** 7 days retention (configured in [modules/keyVault.bicep](modules/keyVault.bicep)). `deploy.ps1` purges leftover soft-deleted vaults before each deploy so re-runs don't hit `ConflictError`.
+- **Cost:** free for basic operations.
 - **Defined in:** [modules/keyVault.bicep](modules/keyVault.bicep)
 
-### 4. Logic App (Consumption) — *the notifier / workflow*
-- **What it is:** An HTTP-triggered workflow that the Function App POSTs to whenever a new contact is submitted. The trigger expects a JSON schema with `name`, `email`, and `message`. The workflow has two actions:
-  1. **`Log_Contact_Received`** (Compose) — uses `coalesce(triggerBody()?['name'], '(missing)')`-style **safe-navigation** expressions plus a `debug_rawBody` field (`@{string(triggerBody())}`) so you can inspect the exact payload that arrived in the run history.
-  2. **`Response`** — returns `200 OK { status: "received", message: "Contact form submitted successfully", processedAt: "<utc>" }` to the caller. Declares `runAfter: { Log_Contact_Received: ['Succeeded'] }` so the response only fires once the log step completes.
-- **Wiring:** The workflow's **callback URL** is produced at deploy time via `listCallbackUrl()` and threaded through [main.bicep](main.bicep) into the Function App's `LOGIC_APP_CALLBACK_URL` app setting — no manual step required.
-- **Why it's here:** Shows how to extend an app with no-code/low-code automation. Today it logs + acks; you can easily extend it to send an email, post to Teams/Slack, or call any API — without touching the Function code.
-- **Cost:** Free for the first ~4,000 actions/month.
+### 4. Logic App (Consumption) — *the notifier*
+
+- **What:** HTTP-triggered workflow with a JSON schema for `{name, email, message}`. Two actions:
+  1. `Log_Contact_Received` (Compose) — uses `coalesce(triggerBody()?['name'], '(missing)')`-style safe-navigation plus a `debug_rawBody` field so you can inspect the exact payload that arrived.
+  2. `Response` — returns `200 { status: "received", processedAt: "<utc>" }`.
+- **Wiring:** the workflow's callback URL is produced by `listCallbackUrl()` at deploy time and passed into the Function App as `LOGIC_APP_CALLBACK_URL`.
+- **Cost:** free for ~4,000 actions/month.
 - **Defined in:** [modules/logicApp.bicep](modules/logicApp.bicep)
 
 ### 5. Application Insights — *the camera*
-- **What it is:** Azure's monitoring and telemetry service with a 30-day retention window.
-- **Why it's here:** Captures logs, exceptions, request rates, durations, and dependencies from the Function App automatically via `APPINSIGHTS_INSTRUMENTATIONKEY`. Lets you debug a live system from the Azure portal.
-- **Cost:** Free for the first 5 GB of ingested telemetry/month.
+
+- **What:** captures logs, exceptions, request rates, dependencies. 30-day retention.
+- **Cost:** free for the first 5 GB/month.
 - **Defined in:** [modules/monitoring.bicep](modules/monitoring.bicep)
 
-**Total cost for deploy → test → destroy: ~$0.00**
+### 6. RBAC role assignments — *the trust*
+
+These are why no secrets are needed at runtime:
+
+| Module | Role | Scope |
+|---|---|---|
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Blob Data Owner | Storage Account |
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Queue Data Contributor | Storage Account |
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Table Data Contributor | Storage Account |
+| [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep) | Key Vault Secrets User | Key Vault |
+
+All four are bound to the Function App's MI principal ID. Role assignment names use `guid(scope, principal, role)` so re-deploys are idempotent.
+
+**Total cost for deploy → test → destroy: ~$0.00.**
 
 ---
 
-## 📂 Repository layout (file-by-file)
+## Repository layout
 
 ```
 Portfolio-project/
-├── main.bicep                       # Root orchestrator — wires the 5 modules together
-├── deploy.ps1                       # One-click deploy: RG + Bicep + zip + frontend + seed
-├── destroy.ps1                      # One-click cleanup (deletes the resource group)
-├── azure-for-students-plan.md       # Offer details, limits, and credit-saving tips
-├── README.md                        # ← you are here
+├── main.bicep                          # Root orchestrator — wires the 7 modules together
+├── deploy.ps1                          # Hardened one-click deploy
+├── destroy.ps1                         # One-click cleanup (deletes the resource group)
+├── azure-for-students-plan.md          # Offer details and credit-saving tips
+├── README.md                           # ← you are here
 ├── modules/
-│   ├── storage.bicep                # Storage Account + tableServices + profiles/contacts tables
-│   ├── functionApp.bicep            # Y1 plan + Function App + Managed Identity + app settings
-│   ├── keyVault.bicep               # Key Vault (RBAC, soft-delete) + the demo app-secret
-│   ├── logicApp.bicep               # Consumption Logic App: HTTP trigger + Compose (debug) + Response
-│   └── monitoring.bicep             # Application Insights component
+│   ├── storage.bicep                   # Storage v2 + tables (profiles, contacts) + deployment-package container
+│   ├── functionApp.bicep               # FC1 plan + Function App + MI + identity-based AzureWebJobsStorage
+│   ├── keyVault.bicep                  # KV (RBAC, 7d soft-delete) + app-secret
+│   ├── logicApp.bicep                  # Consumption Logic App: HTTP trigger + Compose + Response
+│   ├── monitoring.bicep                # Application Insights component
+│   ├── storageRoleAssignment.bicep     # MI → Blob Owner + Queue Contributor + Table Contributor on storage
+│   └── kvRoleAssignment.bicep          # MI → Secrets User on Key Vault
 ├── parameters/
-│   └── dev.bicepparam               # Reference parameter file (deploy.ps1 passes params inline)
+│   └── dev.bicepparam                  # Reference parameter file (deploy.ps1 passes params inline)
 ├── src/
-│   ├── api/                         # Node.js 18 Azure Functions app
-│   │   ├── host.json                # Runtime config + App Insights sampling
-│   │   ├── package.json             # @azure/data-tables ^13.2.2
+│   ├── api/                            # Node 20 Azure Functions app
+│   │   ├── host.json                   # Runtime v4 config + App Insights sampling
+│   │   ├── package.json                # @azure/data-tables ^13 + @azure/identity ^4
 │   │   ├── GetProfile/
-│   │   │   ├── function.json        # HTTP trigger: GET /api/profile, anonymous
-│   │   │   └── index.js             # Reads profiles/portfolio/saurav, falls back to defaults
+│   │   │   ├── function.json           # HTTP trigger: GET /api/profile, anonymous
+│   │   │   └── index.js                # TableClient + DefaultAzureCredential, fallback to default profile
 │   │   └── SubmitContact/
-│   │       ├── function.json        # HTTP trigger: POST /api/contact, anonymous
-│   │       └── index.js             # Validates, writes to contacts, forwards to Logic App
-│   └── frontend/                    # Static portfolio site (served from $web)
-│       ├── index.html               # Hero + 2 panels (profile read, contact write)
-│       ├── style.css                # Responsive design (clamp, grid, glassy panels)
-│       ├── app.js                   # fetch /api/profile, POST /api/contact, renderProfile()
-│       └── config.js                # Placeholder — overwritten by deploy.ps1 with apiBaseUrl
+│   │       ├── function.json           # HTTP trigger: POST /api/contact, anonymous
+│   │       └── index.js                # Validates → writes to contacts table → POSTs to Logic App
+│   └── frontend/                       # Static portfolio site (served from $web)
+│       ├── index.html                  # Hero (GitHub + LinkedIn links) + 2 panels
+│       ├── style.css                   # Responsive design
+│       ├── app.js                      # fetch profile, render skills, POST contact
+│       └── config.js                   # Placeholder — overwritten by deploy.ps1
 └── scripts/
-    ├── seed-profile.ps1             # Inserts portfolio/saurav into the profiles table
-    └── smoke-test.ps1               # 12-check end-to-end validation of the live deployment
+    ├── seed-profile.ps1                # Inserts portfolio/saurav into the profiles table
+    └── smoke-test.ps1                  # End-to-end live deployment check
 ```
 
-### What each file does, in one line
+### File-by-file one-liners
 
 | File | One-liner |
 |---|---|
-| [main.bicep](main.bicep) | Declares names, calls 5 modules, wires their outputs together, emits 5 deployment outputs. |
-| [modules/storage.bicep](modules/storage.bicep) | Provisions Storage v2 + Table Service + `profiles` & `contacts` tables, exports keys & connection string. |
-| [modules/functionApp.bicep](modules/functionApp.bicep) | Y1 plan + Function App with MI, all app settings (incl. `@Microsoft.KeyVault` reference), CORS, HTTPS-only. |
-| [modules/keyVault.bicep](modules/keyVault.bicep) | RBAC-enabled vault + single secret `app-secret`. Outputs name & URI. |
-| [modules/logicApp.bicep](modules/logicApp.bicep) | Inline JSON workflow: HTTP trigger validating `{name,email,message}` → Compose action (`coalesce` + `debug_rawBody`) → 200 Response. Outputs `logicAppCallbackUrl`. |
-| [modules/monitoring.bicep](modules/monitoring.bicep) | App Insights component (web kind, 30d retention). Outputs instrumentation key. |
-| [parameters/dev.bicepparam](parameters/dev.bicepparam) | Sample parameter file; the real `appSecret` is injected at deploy time. |
+| [main.bicep](main.bicep) | Generates unique names from `uniqueString(resourceGroup().id)`, deploys 7 modules, threads outputs (Storage → Function, Logic → Function, KV → Function, Monitoring → Function), grants MI roles. |
+| [modules/storage.bicep](modules/storage.bicep) | Storage v2 + `deployment-package` blob container + `tableServices/default` + `profiles` and `contacts` tables. Outputs only endpoints and names — **no keys**. |
+| [modules/functionApp.bicep](modules/functionApp.bicep) | FC1 Linux plan + Function App with SystemAssigned MI, `functionAppConfig.deployment.storage` = blob container + MI auth, app settings include identity-based `AzureWebJobsStorage__*`, Key Vault reference for `APP_SECRET`, CORS for `localhost:3000` + portal. |
+| [modules/keyVault.bicep](modules/keyVault.bicep) | RBAC-enabled vault + the demo `app-secret`. |
+| [modules/logicApp.bicep](modules/logicApp.bicep) | Inline workflow definition: HTTP trigger with JSON schema → Compose with safe-navigation + `debug_rawBody` → 200 Response. Outputs `logicAppCallbackUrl`. |
+| [modules/monitoring.bicep](modules/monitoring.bicep) | App Insights component (web, 30d retention). Outputs instrumentation key. |
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Three `Microsoft.Authorization/roleAssignments` against the storage account: Blob Data Owner, Queue Data Contributor, Table Data Contributor. |
+| [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep) | One role assignment: Key Vault Secrets User against the vault. |
 | [src/api/host.json](src/api/host.json) | Functions runtime v4 + extension bundle + App Insights sampling. |
-| [src/api/package.json](src/api/package.json) | One runtime dep: `@azure/data-tables`. |
-| [src/api/GetProfile/index.js](src/api/GetProfile/index.js) | Reads entity `portfolio/saurav` from `profiles`; on miss returns default payload with `source: "default"`. |
-| [src/api/SubmitContact/index.js](src/api/SubmitContact/index.js) | Validates body → inserts into `contacts` → POSTs `{name,email,message}` to Logic App via Node 18's built-in `fetch()` with explicit `Content-Length` → returns `{success, message}`. |
-| [src/frontend/index.html](src/frontend/index.html) | Markup with `#profile-name`, `#skills-list`, `#contact-form`, etc. Loads `config.js` then `app.js`. |
-| [src/frontend/app.js](src/frontend/app.js) | On load → `GET /api/profile` and render; on submit → `POST /api/contact`. |
+| [src/api/package.json](src/api/package.json) | Runtime deps: `@azure/data-tables`, `@azure/identity`. |
+| [src/api/GetProfile/index.js](src/api/GetProfile/index.js) | `new TableClient(\`https://${STORAGE_ACCOUNT_NAME}.table.core.windows.net\`, 'profiles', new DefaultAzureCredential())` → `getEntity('portfolio','saurav')`; on miss, return default profile with `source:"default"`. |
+| [src/api/SubmitContact/index.js](src/api/SubmitContact/index.js) | Validates body → `createEntity` in `contacts` (DefaultAzureCredential) → `fetch(LOGIC_APP_CALLBACK_URL, …)` with explicit `Content-Length` → 200. |
+| [src/frontend/index.html](src/frontend/index.html) | Hero with `#github-link` + `#linkedin-link`, skills panel, contact form. Loads `config.js` then `app.js`. |
+| [src/frontend/app.js](src/frontend/app.js) | On load → `GET /api/profile`, render name/title/skills/github/linkedin; on submit → `POST /api/contact`. |
 | [src/frontend/config.js](src/frontend/config.js) | Holds `window.PORTFOLIO_CONFIG.apiBaseUrl` — regenerated by `deploy.ps1`. |
-| [src/frontend/style.css](src/frontend/style.css) | Glassmorphism look — Space Grotesk + Source Serif, gradients, responsive `<860px` collapse. |
-| [deploy.ps1](deploy.ps1) | 6-stage one-click deploy (RG → Bicep → zip API → publish frontend → seed). |
-| [destroy.ps1](destroy.ps1) | `az group delete --yes --no-wait` after typing `yes`. |
-| [scripts/seed-profile.ps1](scripts/seed-profile.ps1) | Pulls storage key, ensures `profiles` table, inserts/replaces the `portfolio/saurav` entity. |
-| [scripts/smoke-test.ps1](scripts/smoke-test.ps1) | 12 checks (RG, app state, settings, tables, seeded entity, GET, POST, persistence, 400). |
+| [src/frontend/style.css](src/frontend/style.css) | Responsive glassmorphism look. |
+| [deploy.ps1](deploy.ps1) | Hardened 6-stage pipeline (KV purge → Bicep → SCM-wait + zip-deploy with retries → static-website enable retries + frontend upload retries → seed). |
+| [destroy.ps1](destroy.ps1) | `az group delete --yes --no-wait` after a `yes` prompt. |
+| [scripts/seed-profile.ps1](scripts/seed-profile.ps1) | Pulls a storage key, ensures the `profiles` table, upserts `portfolio/saurav` with GitHub + LinkedIn URLs. |
+| [scripts/smoke-test.ps1](scripts/smoke-test.ps1) | End-to-end live check (RG state, app settings, table exists, GET 200 from table, POST 200 + persisted, 400 on invalid). |
 
 ---
 
-## 🧩 Bicep module graph
+## Bicep module graph
 
-How `main.bicep` orchestrates the five modules and threads their outputs into the Function App.
+How `main.bicep` orchestrates the modules and threads their outputs.
 
 ```mermaid
 flowchart TB
-    Main["main.bicep<br/>(root orchestrator)<br/>targetScope = 'resourceGroup'"]
+    Main["main.bicep<br/>targetScope = 'resourceGroup'"]
 
     Main -->|module deploy-monitoring| Mon["modules/monitoring.bicep<br/>Microsoft.Insights/components"]
     Main -->|module deploy-keyvault| KV["modules/keyVault.bicep<br/>Microsoft.KeyVault/vaults<br/>+ secrets/app-secret"]
-    Main -->|module deploy-storage| St["modules/storage.bicep<br/>Microsoft.Storage/storageAccounts<br/>+ tableServices/tables<br/>(profiles, contacts)"]
+    Main -->|module deploy-storage| St["modules/storage.bicep<br/>Microsoft.Storage/storageAccounts<br/>+ deployment-package blob container<br/>+ profiles + contacts tables"]
     Main -->|module deploy-logicapp| La["modules/logicApp.bicep<br/>Microsoft.Logic/workflows<br/>(HTTP trigger + Compose + Response)"]
-    Main -->|module deploy-functionapp<br/>depends on La| Fn["modules/functionApp.bicep<br/>Microsoft.Web/serverfarms (Y1)<br/>+ Microsoft.Web/sites<br/>+ SystemAssigned identity"]
+    Main -->|module deploy-functionapp| Fn["modules/functionApp.bicep<br/>Microsoft.Web/serverfarms (FC1, Linux)<br/>+ Microsoft.Web/sites<br/>+ SystemAssigned identity"]
 
-    Mon -.outputs<br/>instrumentationKey, appInsightsId.-> Fn
-    KV  -.outputs<br/>keyVaultName, keyVaultUri.-> Fn
-    St  -.outputs<br/>storageAccountName, storageAccountKey,<br/>storageConnectionString.-> Fn
+    Main -->|module deploy-storage-rbac| RbacSt["modules/storageRoleAssignment.bicep<br/>Blob Data Owner +<br/>Queue Data Contributor +<br/>Table Data Contributor"]
+    Main -->|module deploy-kv-rbac| RbacKv["modules/kvRoleAssignment.bicep<br/>Key Vault Secrets User"]
+
+    Mon -.outputs<br/>instrumentationKey.-> Fn
+    KV  -.outputs<br/>keyVaultName.-> Fn
+    St  -.outputs<br/>storageAccountName +<br/>deploymentContainerUrl.-> Fn
     La  -.outputs<br/>logicAppCallbackUrl.-> Fn
 
-    Main -.emits.-> Out["📤 functionAppUrl<br/>📤 frontendUrl (static $web)<br/>📤 keyVaultUri<br/>📤 logicAppEndpoint<br/>📤 storageAccountName"]
+    Fn -.outputs<br/>functionAppPrincipalId.-> RbacSt
+    Fn -.outputs<br/>functionAppPrincipalId.-> RbacKv
+    St -.outputs<br/>storageAccountName.-> RbacSt
+    KV -.outputs<br/>keyVaultName.-> RbacKv
+
+    Main -.emits.-> Out["📤 functionAppUrl<br/>📤 functionAppName<br/>📤 frontendUrl (static $web)<br/>📤 keyVaultUri<br/>📤 logicAppEndpoint<br/>📤 storageAccountName<br/>📤 deploymentContainerName"]
 
     classDef root fill:#fff8e1,stroke:#f57f17,stroke-width:2px
     classDef module fill:#e8eaf6,stroke:#283593
+    classDef rbac fill:#fce4ec,stroke:#ad1457
     classDef output fill:#e8f5e9,stroke:#1b5e20
     class Main root
     class Mon,KV,St,Fn,La module
+    class RbacSt,RbacKv rbac
     class Out output
 ```
 
-> The Function App module now has **four implicit dependencies** (Storage, Key Vault, Monitoring, **and Logic App**) — Bicep figures out the deploy order automatically from the `params:` block. The Logic App deploys first so its `listCallbackUrl()` output can be passed to the Function App as `LOGIC_APP_CALLBACK_URL`.
+> Bicep figures out the deploy order automatically from the `params:` block: Storage / KV / Monitoring / Logic App deploy first; the Function App depends on all four; the two RBAC modules depend on the Function App (for its `principalId`).
 
 ---
 
-## 🔁 Communication flows (end-to-end)
+## Communication flows
 
 ### 1. `GET /api/profile` — read flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as 👤 User<br/>(Browser / curl)
-    participant F as ⚡ Function App<br/>GetProfile
-    participant E as 🔧 Env Vars
-    participant T as 💾 Table Storage<br/>profiles
-    participant AI as 📊 App Insights
+    participant U as User (Browser / curl)
+    participant F as Function App<br/>GetProfile
+    participant E as Env vars
+    participant Cred as DefaultAzureCredential<br/>(MI token)
+    participant T as Table Storage<br/>profiles
+    participant AI as App Insights
 
     U->>+F: GET /api/profile
-    F->>E: read TABLE_STORAGE_CONNECTION
-    F->>+T: getEntity('portfolio', 'saurav')
+    F->>E: read STORAGE_ACCOUNT_NAME
+    F->>Cred: get token for storage.azure.com
+    Cred-->>F: AAD token (MI)
+    F->>+T: getEntity('portfolio','saurav') with Bearer token
     alt Entity found (seeded)
         T-->>-F: { name, title, about, skills, github, linkedin }
         F->>F: JSON.parse(entity.skills)
-        F-->>U: 200 OK<br/>{ success:true, source:"table-storage", data:{...} }
-    else Entity missing (not yet seeded)
+        F-->>U: 200 { success, source:"table-storage", data }
+    else Entity missing (not seeded yet)
         T--xF: 404 Not Found (caught)
-        F->>F: build default profile object
-        F-->>U: 200 OK<br/>{ success:true, source:"default", data:{...} }
+        F-->>U: 200 { success, source:"default", data:{ ...defaults with linkedin } }
     end
-    F-->>AI: request telemetry + logs
+    F-->>AI: request + dependency telemetry
     deactivate F
 ```
 
-**Why the fallback matters:** if the seed step hasn't run yet (or you deleted the row), the API still returns a sensible payload instead of an error. You can tell the two apart by the `source` field.
-
----
+> The fallback means the API stays green even before the seed step runs. Tell them apart by the `source` field.
 
 ### 2. `POST /api/contact` — write + notify flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as 👤 User
-    participant F as ⚡ Function App<br/>SubmitContact
-    participant T as 💾 Table Storage<br/>contacts
-    participant L as 🔄 Logic App<br/>HTTP Trigger + Compose + Response
-    participant AI as 📊 App Insights
+    participant U as User
+    participant F as Function App<br/>SubmitContact
+    participant T as Table Storage<br/>contacts (via MI)
+    participant L as Logic App<br/>HTTP Trigger + Compose + Response
+    participant AI as App Insights
 
     U->>+F: POST /api/contact<br/>{ name, email, message }
 
-    alt Missing required field
-        F-->>U: 400 Bad Request<br/>{ error: "Missing required fields: name, email, message" }
+    alt Missing field
+        F-->>U: 400 { error: "Missing required fields: name, email, message" }
     else Valid payload
-        F->>+T: createEntity({<br/>  partitionKey: 'contact',<br/>  rowKey: `${Date.now()}-${rand}`,<br/>  name, email, message, submittedAt<br/>})
+        F->>+T: createEntity({<br/>  partitionKey:'contact',<br/>  rowKey:`${Date.now()}-${rand}`,<br/>  name, email, message, submittedAt<br/>})
         T-->>-F: row inserted
-        Note over F: payload = JSON.stringify({name,email,message})<br/>fetch(LOGIC_APP_CALLBACK_URL, { method:'POST',<br/>headers:{ Content-Type, Content-Length },<br/>body: payload })
-        F->>+L: POST { name, email, message }<br/>Content-Length set explicitly
+        Note over F: payload = JSON.stringify({name,email,message})<br/>fetch(LOGIC_APP_CALLBACK_URL,<br/>  Content-Type: application/json,<br/>  Content-Length: Buffer.byteLength(payload),<br/>  body: payload)
+        F->>+L: POST { name, email, message }
         L->>L: Compose: { contactName, contactEmail,<br/>contactMessage, debug_rawBody } via<br/>coalesce(triggerBody()?['x'], '(missing)')
-        L-->>-F: 200 OK<br/>{ status: "received",<br/>  message: "Contact form submitted successfully",<br/>  processedAt: "<utc>" }
-        F-->>U: 200 OK<br/>{ success:true,<br/>  message: "Thank you {name}, your message has been received!" }
+        L-->>-F: 200 { status:"received", processedAt:"<utc>" }
+        F-->>U: 200 { success, message:"Thank you {name}, ..." }
     end
 
     F-->>AI: request + dependency telemetry
@@ -386,11 +399,7 @@ sequenceDiagram
     deactivate F
 ```
 
-> **Why `fetch()` + explicit `Content-Length`?** Node's older `https.request()` API streams the body with **chunked transfer encoding** (no `Content-Length` header). The Logic App HTTP trigger does not parse chunked bodies as JSON, so `triggerBody()` returns `null` and downstream expressions fail. Using Node 18's built-in `fetch()` with `Content-Length: Buffer.byteLength(payload)` makes the request a normal content-length-terminated POST that Logic Apps parses correctly.
->
-> **Debugging tip:** the Compose action's `debug_rawBody` field is `@{string(triggerBody())}` — open the latest run in the Azure portal → click `Log_Contact_Received` → if `debug_rawBody` contains the full JSON, the wiring is healthy. If it's empty or `null`, the Function App isn't sending the body correctly (check Application Insights).
-
----
+> **Why `fetch()` + explicit `Content-Length`?** Older `https.request()` streams the body with **chunked transfer encoding** (no `Content-Length`). The Logic App HTTP trigger doesn't parse chunked bodies as JSON, so `triggerBody()` returns `null` and Compose expressions fail. Setting `Content-Length: Buffer.byteLength(payload)` makes it a content-length-terminated POST that Logic Apps parses correctly. Inspect `debug_rawBody` in the latest Logic App run — it should contain the literal JSON string.
 
 ### 3. Frontend → API flow
 
@@ -398,99 +407,124 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant U as Browser
-    participant W as Storage Static Site (web container)
+    participant W as Storage `$web` static site
     participant J as app.js (in browser)
     participant API as Function App API
 
     U->>W: GET https://STORAGE.z29.web.core.windows.net/
     W-->>U: index.html + style.css + config.js + app.js
-
     Note over U,J: Browser parses HTML,<br/>loads config.js then app.js
     J->>J: read window.PORTFOLIO_CONFIG.apiBaseUrl
     J->>+API: GET apiBaseUrl + /api/profile
-    API-->>-J: success, source, data
-    J->>J: renderProfile — name, title, about, skills, github
+    API-->>-J: { success, source, data }
+    J->>J: renderProfile — name, title, about, skills,<br/>githubLink.href, linkedinLink.href
 
     U->>J: submits the contact form
-    J->>+API: POST apiBaseUrl + /api/contact<br/>name, email, message
-    API-->>-J: success, message
+    J->>+API: POST apiBaseUrl + /api/contact
+    API-->>-J: { success, message }
     J->>U: update form-status pill
 ```
 
-> **CORS** is configured in [modules/functionApp.bicep](modules/functionApp.bicep) (`allowedOrigins` defaults to `portal.azure.com` and `localhost:3000`); `deploy.ps1` appends the live static-site URL with `az functionapp cors add`.
+> CORS: [modules/functionApp.bicep](modules/functionApp.bicep) seeds `allowedOrigins` with `portal.azure.com` + `localhost:3000`; `deploy.ps1` appends the live `$web` URL via `az functionapp cors add`.
 
----
+### 4. Key Vault reference resolution (startup / refresh)
 
-### 4. Key Vault reference resolution (startup/refresh)
-
-How the Function App reads `app-secret` from Key Vault **without ever seeing a password** in source code.
+How the Function App reads `app-secret` from Key Vault **without ever seeing a password**.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant F as Function App (System-Assigned MI)
+    participant Plat as Functions platform host
     participant AAD as Azure AD (IMDS endpoint)
     participant KV as Key Vault (RBAC enabled)
-    participant App as App Settings (APP_SECRET)
 
-    Note over F,App: At Function App startup or setting refresh
-    F->>App: read APP_SECRET (Microsoft.KeyVault reference,<br/>VaultName=kv, SecretName=app-secret)
-    App->>+AAD: request token (resource=vault.azure.net)
-    AAD-->>-App: AAD access token (scoped to MI principal)
-    App->>+KV: GET /secrets/app-secret<br/>Authorization Bearer token
-    KV->>KV: RBAC check (MI must have Key Vault Secrets User)
-    KV-->>-App: secret value
-    App-->>F: resolved env var APP_SECRET = secret value
+    Note over F,Plat: At app start (and on setting refresh)
+    Plat->>Plat: read app setting APP_SECRET<br/>= Microsoft.KeyVault(VaultName=...;SecretName=app-secret)
+    Plat->>+AAD: request token (resource=vault.azure.net)
+    AAD-->>-Plat: AAD access token scoped to MI principal
+    Plat->>+KV: GET /secrets/app-secret  (Authorization: Bearer ...)
+    KV->>KV: RBAC check (MI has "Key Vault Secrets User")
+    KV-->>-Plat: secret value
+    Plat-->>F: process.env.APP_SECRET = <secret>
     Note over F: Function code reads process.env.APP_SECRET<br/>— no credential in source
 ```
 
-> **Heads-up (one thing the Bicep does *not* do today):** the Function App's Managed Identity is created, but the RBAC role assignment giving it `Key Vault Secrets User` on the vault is **not** present in [modules/keyVault.bicep](modules/keyVault.bicep). If you rely on `APP_SECRET` at runtime, add a `Microsoft.Authorization/roleAssignments` resource granting the MI's principal ID that role — otherwise the reference resolves to an unresolved placeholder. The rest of the app does not depend on this secret today, so it remains a teaching example.
+> The required `Key Vault Secrets User` role is granted by [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep). If `process.env.APP_SECRET` ever resolves to the literal `@Microsoft.KeyVault(...)` string in your Function logs, the role assignment didn't apply.
+
+### 5. Identity-based `AzureWebJobsStorage` (Flex Consumption runtime)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant F as Function App<br/>(Functions host)
+    participant AAD as Azure AD
+    participant Blob as Storage Blob<br/>deployment-package container
+    participant Tbl as Storage Tables<br/>(AzureWebJobsStorage system tables)
+
+    Note over F: Settings:<br/>AzureWebJobsStorage__accountName = STORAGE<br/>AzureWebJobsStorage__credential   = managedidentity
+    F->>AAD: get token (resource=storage.azure.com) via MI
+    AAD-->>F: AAD token
+
+    F->>Blob: GET app package (Bearer token)<br/>(Blob Data Owner role)
+    Blob-->>F: zip bytes → host unpacks & runs
+
+    F->>Tbl: read/write internal coordination tables<br/>(Table Data Contributor role)
+    Tbl-->>F: ok
+```
+
+> The same MI + the same RBAC roles cover both the user-code data path (your `profiles` / `contacts` table reads/writes) and the platform's internal `AzureWebJobsStorage` traffic. There is **no `AzureWebJobsStorage` connection-string app setting** in this project.
 
 ---
 
-## 🚀 Deployment pipeline (`deploy.ps1`)
+## Deployment pipeline
 
-The one-click deployment is a 6-stage pipeline. Each stage is idempotent — re-running is safe.
+`deploy.ps1` is a hardened 6-stage pipeline. Each stage is idempotent. The script aborts with `exit 1` on a real failure (no more silent half-deploys).
 
 ```mermaid
 flowchart LR
-    Dev["👨‍💻 Developer<br/>(PowerShell)"] -->|"./deploy.ps1"| Script
+    Dev["Developer<br/>(PowerShell)"] -->|".\deploy.ps1"| Script
 
-    subgraph Script["deploy.ps1 — 6 stages"]
+    subgraph Script["deploy.ps1"]
         direction TB
-        S1["[1/6] az group create<br/>rg-portfolio-dev · centralindia"]
-        S2["[2/6] az deployment group create<br/>main.bicep + appSecret"]
-        S3["[3/6] Capture outputs:<br/>funcUrl · frontendUrl ·<br/>kvUri · storageName"]
-        S4["[4/6] Compress src/api → zip<br/>az functionapp deployment<br/>source config-zip<br/>(remote npm install via Oryx)"]
-        S5["[5/6] Enable $web static site<br/>Inject config.js (apiBaseUrl)<br/>az storage blob upload-batch<br/>az functionapp cors add"]
-        S6["[6/6] scripts/seed-profile.ps1<br/>az storage entity insert<br/>(profiles/portfolio/saurav)"]
-        S1 --> S2 --> S3 --> S4 --> S5 --> S6
+        S1["[1/6] az group create"]
+        S1a["[1a/6] Purge soft-deleted<br/>Key Vaults matching portfolio*<br/>(prevents ConflictError)"]
+        S2["[2/6] az deployment group create<br/>main.bicep + appSecret prompt"]
+        S3["[3/6] Capture outputs"]
+        S4["[4/6] Wait for SCM site<br/>→ zip src/api<br/>→ config-zip --build-remote true<br/>(3× retry on failure)"]
+        S5["[5/6] Enable &dollar;web (retry until enabled)<br/>→ poll &dollar;web container<br/>→ generate config.js<br/>→ upload-batch (3× retry)<br/>→ CORS allowlist &dollar;web URL"]
+        S6["[6/6] scripts/seed-profile.ps1<br/>upserts portfolio/saurav"]
+        S1 --> S1a --> S2 --> S3 --> S4 --> S5 --> S6
     end
 
-    S2 -->|ARM deploys| Bicep
-    subgraph Bicep["main.bicep modules"]
-        M1["monitoring.bicep<br/>App Insights"]
-        M2["keyVault.bicep<br/>KV + app-secret"]
-        M3["storage.bicep<br/>Storage + 2 tables"]
-        M4["functionApp.bicep<br/>Plan + Function App"]
-        M5["logicApp.bicep<br/>Workflow"]
-        M3 -.storageKey + connStr.-> M4
-        M1 -.instrumentationKey.-> M4
-        M2 -.kvName.-> M4
+    S2 -->|ARM| Bicep
+    subgraph Bicep["main.bicep modules (deploy in parallel where possible)"]
+        M1["monitoring"]
+        M2["keyVault"]
+        M3["storage"]
+        M5["logicApp"]
+        M4["functionApp<br/>(depends on 1-3 + 5)"]
+        Rs["storageRoleAssignment<br/>(depends on 4)"]
+        Rk["kvRoleAssignment<br/>(depends on 4)"]
+        M3 --> M4
+        M2 --> M4
+        M1 --> M4
+        M5 --> M4
+        M4 --> Rs
+        M4 --> Rk
     end
 
-    Bicep --> Azure["☁️ Azure<br/>rg-portfolio-dev"]
-    S4 -->|zip + Kudu/Oryx| Azure
-    S5 -->|blob REST + config update| Azure
+    Bicep --> Azure["Azure rg-portfolio-dev"]
+    S4 -->|zip via SCM/Oryx| Azure
+    S5 -->|blob REST| Azure
     S6 -->|Table REST API| Azure
-
     Azure -->|live URLs| Dev
 
     classDef stage fill:#fff3e0,stroke:#e65100
     classDef bicep fill:#e8eaf6,stroke:#283593
     classDef cloud fill:#e0f7fa,stroke:#006064
-    class S1,S2,S3,S4,S5,S6 stage
-    class M1,M2,M3,M4,M5 bicep
+    class S1,S1a,S2,S3,S4,S5,S6 stage
+    class M1,M2,M3,M4,M5,Rs,Rk bicep
     class Azure cloud
 ```
 
@@ -498,69 +532,93 @@ flowchart LR
 
 | # | Stage | What actually happens |
 |---|---|---|
-| 1 | **RG create** | `az group create -n rg-portfolio-dev -l centralindia` |
-| 2 | **Bicep deploy** | `az deployment group create --template-file main.bicep --parameters projectName=portfolio appSecret=<prompted>` |
-| 3 | **Capture outputs** | Parses `properties.outputs.{functionAppUrl, frontendUrl, keyVaultUri, logicAppEndpoint, storageAccountName}`. |
-| 4 | **Publish API** | `Compress-Archive src/api/* → temp.zip` then `az functionapp deployment source config-zip --build-remote true`. Kudu runs Oryx → `npm install` on the cloud. |
-| 5 | **Publish frontend** | Enables `$web` static site, writes a generated `config.js` with `apiBaseUrl=<funcUrl>`, uploads `src/frontend/*` to `$web`, adds the static-site URL to the Function App's CORS allowlist. |
-| 6 | **Seed profile** | `scripts/seed-profile.ps1` resolves the storage account from the function's `TABLE_STORAGE_CONNECTION`, ensures the `profiles` table exists, and upserts the `portfolio/saurav` entity. Then calls `GET /api/profile` to prove it works. |
+| 1 | RG create | `az group create -n rg-portfolio-dev -l centralindia` |
+| 1a | **KV purge** | Lists `az keyvault list-deleted` for names matching `portfolio*` in the location; purges each with `--no-wait`; polls until none remain. **Prevents `ConflictError` on redeploy.** |
+| 1.5 | Y1 cleanup | If an old Y1 Consumption plan/function exists from a previous deployment, delete it (plan SKU can't be changed in place). No-op for clean deploys. |
+| 2 | Bicep deploy | `az deployment group create --template-file main.bicep --parameters projectName=portfolio appSecret=<prompted>` |
+| 3 | Capture outputs | Parses `functionAppUrl`, `functionAppName`, `frontendUrl`, `keyVaultUri`, `logicAppEndpoint`, `storageAccountName`. |
+| 4 | **Function code deploy** | Zips `src/api/*`. Polls `https://<func>.scm.azurewebsites.net` (HEAD, up to 5 min) until ready. Runs `az functionapp deployment source config-zip --src <zip> --build-remote true` with up to 3 retries (30 s backoff). Aborts on failure. |
+| 5 | **Frontend publish** | Calls `az storage blob service-properties update --static-website` in a retry-until-enabled loop (data-plane is cold on brand-new accounts). Polls `az storage container exists --name $web`. Generates `config.js` with `apiBaseUrl = funcUrl`. `az storage blob upload-batch` with up to 3 retries. Appends the static-site URL to the Function App's CORS list. |
+| 6 | Seed profile | `scripts/seed-profile.ps1 -ResourceGroup -StorageAccount -FunctionApp` pulls a key, ensures the `profiles` table, upserts the `portfolio/saurav` entity (skills, GitHub, LinkedIn). Then `GET /api/profile` to prove it works. |
+
+### Why all the retries?
+
+Three Azure data-plane endpoints lag behind ARM:
+
+1. **Function App SCM site** (`<func>.scm.azurewebsites.net`) takes ~30–60 s after Bicep finishes before it accepts zip uploads — first attempt is often a 404 HTML page.
+2. **Storage blob data-plane** on a brand-new account silently no-ops the `--static-website` toggle for 30–60 s; the script verifies `staticWebsite.enabled == true` before continuing.
+3. **`$web` container** is created lazily a few seconds *after* the toggle succeeds, so the upload would race and fail with `ContainerNotFound`.
+
+The previous version of the script hit all three races. The current version polls each one and retries the operation up to 3× before aborting.
 
 ---
 
-## 🛫 Quick start
+## Quick start
 
 ### Prerequisites
 
-- **Azure CLI** installed (`az --version`) and logged in (`az login`)
-- **Azure for Students** (or any) subscription active (`az account set --subscription <id>`)
-- **PowerShell 5.1+** (Windows) — used by `deploy.ps1` / `destroy.ps1` / `scripts/*`
-- *(Optional)* Node.js 18+ and Azure Functions Core Tools (`npm i -g azure-functions-core-tools@4`) — only needed for **local** Function App development. `deploy.ps1` publishes via `az` zip-deploy, so they aren't required for cloud deployment.
+- **Azure CLI** (`az --version`) and logged in (`az login`)
+- An **Azure subscription** (Azure for Students works perfectly)
+- **PowerShell 5.1+** (Windows) — used by all the scripts
+- *(Optional)* Node.js 20 + Azure Functions Core Tools — only for **local** Function App development. Not needed for cloud deploy.
 
-### Deploy (one command)
+### Deploy
 
 ```powershell
 cd Portfolio-project
 .\deploy.ps1
 ```
 
-The script will:
-1. Ask for an app secret (stored in Key Vault)
-2. Create the resource group in Central India
-3. Deploy all Bicep resources (~2-3 minutes)
-4. Package `src/api` and publish it to the Function App (zip-deploy with remote `npm install`)
-5. Enable static-site hosting and publish `src/frontend` to `$web` (with a generated `config.js`)
-6. Add the static-site URL to the Function App's CORS allowlist
-7. Seed your profile data into Table Storage
-8. Print API & frontend URLs for testing
+You'll be prompted for an app secret (any string — stored in Key Vault). Then the script will:
 
-### Re-deploy only the function code
+1. Create the resource group
+2. Purge any soft-deleted Key Vaults that would block Bicep
+3. Deploy all 7 Bicep modules (~2–3 min)
+4. Wait for the Function App SCM endpoint, then publish the zipped Node code (`npm install` runs remotely on the host)
+5. Enable static-site hosting (with retry), upload the frontend with a generated `config.js`, add the static URL to CORS
+6. Seed your portfolio data and verify `GET /api/profile`
 
-`deploy.ps1` already publishes the function code. Use this only if you change `src/api` and want to re-deploy quickly without re-running Bicep:
+If everything works, you'll see "Frontend published" + "Seed complete" + the two URLs printed at the end.
+
+### Deploy to a different resource group
+
+All scripts take `-ResourceGroup` as a parameter, defaulting to `rg-portfolio-dev`:
 
 ```powershell
-cd src\api
-func azure functionapp publish <function-app-name>
+.\deploy.ps1       -ResourceGroup rg-portfolio-test
+.\destroy.ps1      -ResourceGroup rg-portfolio-test
+```
+
+Resource names inside Bicep use `uniqueString(resourceGroup().id)` so different RGs produce different names — no collisions with a previous deployment.
+
+### Quick re-publish only the function code
+
+```powershell
+$az='C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'
+$zip = Join-Path $env:TEMP 'api.zip'; Remove-Item $zip -ErrorAction SilentlyContinue
+Compress-Archive .\src\api\* $zip -Force
+& $az functionapp deployment source config-zip -g rg-portfolio-dev -n <function-app-name> --src $zip --build-remote true
 ```
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Manual smoke test
 
-Replace `<function-app-name>` with the name printed by `deploy.ps1` (looks like `portfolio-func-xxxxxxxxxxxx`).
+Replace `<function-app-name>` with the name printed by `deploy.ps1` (e.g., `portfolio-func-svbzwtaqldjri`).
 
 ```powershell
-# Get profile
+# Read
 curl https://<function-app-name>.azurewebsites.net/api/profile
 
-# Submit contact form
+# Write
 curl -X POST https://<function-app-name>.azurewebsites.net/api/contact `
   -H "Content-Type: application/json" `
-  -d '{"name":"Test User","email":"test@example.com","message":"Hello from curl!"}'
+  -d '{"name":"Test User","email":"test@example.com","message":"Hello!"}'
 ```
 
-**Example `GET /api/profile` response:**
+**Sample `GET /api/profile` response (after seeding):**
 
 ```json
 {
@@ -569,146 +627,131 @@ curl -X POST https://<function-app-name>.azurewebsites.net/api/contact `
   "data": {
     "name": "Saurav Ganguly",
     "title": "Cloud Engineering Student",
-    "about": "Learning cloud infrastructure with Azure for Students...",
-    "skills": ["Azure", "Bicep", "IaC", "DevOps", "Python", "Node.js"],
+    "about": "Learning cloud infrastructure with Azure for Students. Building serverless APIs and managing IaC with Bicep.",
+    "skills": ["Azure","Bicep","IaC","DevOps","Python","Node.js"],
     "github": "https://github.com/ganguly298",
-    "linkedin": ""
+    "linkedin": "https://www.linkedin.com/in/saurav-ganguly-8b1542279"
   }
 }
 ```
 
-**Example `POST /api/contact` response:**
+**Sample `POST /api/contact` response:**
 
 ```json
-{
-  "success": true,
-  "message": "Thank you Test User, your message has been received!"
-}
+{ "success": true, "message": "Thank you Test User, your message has been received!" }
 ```
 
-If the `profiles` table hasn't been seeded yet, the API gracefully falls back to default data and returns `"source": "default"`.
-
-### Automated end-to-end smoke test
+### Automated smoke test
 
 ```powershell
 .\scripts\smoke-test.ps1
 ```
 
-Runs **12 checks**:
-
-1. Resource group exists
-2. Function App state = Running
-3. `TABLE_STORAGE_CONNECTION` app setting present
-4. Connection string points to the expected storage account
-5. `AzureWebJobsStorage` app setting present
-6. Storage account key fetched
-7. `profiles` table exists
-8. `contacts` table exists
-9. Seed entity `portfolio/saurav` exists
-10. `profile.skills` is a valid JSON array
-11. `GET /api/profile` returns 200 + `source=table-storage` + non-empty skills array
-12. `POST /api/contact` returns success **and** the row is persisted **and** missing-field POST returns 400
-
-Exit code = number of failed checks.
+Checks RG state, app settings, table existence, the seeded profile entity, `GET 200 + source=table-storage`, `POST 200 + row persisted`, and the `400` path. Exit code = number of failed checks.
 
 ---
 
-## 🧹 Destroy / stop all charges
+## Destroy / cleanup
 
 ```powershell
 .\destroy.ps1
 ```
 
-Prompts for `yes`, then runs `az group delete --yes --no-wait`. Resources disappear in the background (2–5 min). Once deletion completes, **no further charges accrue**.
+Prompts for `yes`, then `az group delete --yes --no-wait`. Resources are gone in 2–5 minutes and **all charges stop**.
 
-> ⚠️ Key Vault names are soft-deleted for 7 days. If you re-deploy with the same `projectName`, you may need to purge the old vault first, change the name, or wait 7 days.
-
----
-
-## 🎓 Bicep concepts covered
-
-| Concept | Where |
-|---------|-------|
-| `param` / `var` / `output` | All files |
-| `@secure()` decorator | `main.bicep` (`appSecret`), `keyVault.bicep`, `functionApp.bicep` (`storageAccountKey`) |
-| `@description()` decorator | Every param in every module |
-| `uniqueString(resourceGroup().id)` | Globally unique resource names in `main.bicep` |
-| `module` references with output threading | `main.bicep` → 5 modules (Logic App → Function App for callback URL) |
-| `targetScope = 'resourceGroup'` | `main.bicep` |
-| System-Assigned **Managed Identity** | `functionApp.bicep` (`identity: { type: 'SystemAssigned' }`) |
-| **Key Vault references** in app settings | `@Microsoft.KeyVault(VaultName=...;SecretName=app-secret)` in `functionApp.bicep` |
-| **RBAC** Key Vault | `enableRbacAuthorization: true` in `keyVault.bicep` |
-| Table Storage provisioning | `storage.bicep` (parent/child resource chain) |
-| Logic App inline workflow definition | `logicApp.bicep` (`definition: { ... }`) |
-| `listKeys()` & `listCallbackUrl()` runtime functions | `storage.bicep`, `logicApp.bicep` |
-| Implicit dependencies via symbolic names | `main.bicep` outputs → `functionApp.bicep` params |
-| CORS configuration | `functionApp.bicep` (`siteConfig.cors.allowedOrigins`) |
-| HTTPS-only / TLS 1.2 / FTPS disabled | `functionApp.bicep`, `storage.bicep` |
-| Static website hosting on Storage | Enabled imperatively by `deploy.ps1` (no first-class Bicep resource) |
+> ⚠️ Key Vault names are soft-deleted for **7 days** in this project (configured in [modules/keyVault.bicep](modules/keyVault.bicep)). The next `deploy.ps1` handles this automatically: stage **1a** purges any soft-deleted `portfolio*` vault in the same region before Bicep runs.
 
 ---
 
-## 💰 Cost model
+## Why we migrated from Y1 Consumption to Flex Consumption
+
+The original implementation used **Y1 Consumption** Functions with an `AzureWebJobsStorage` connection string. That meant:
+
+- **The storage account key was an app setting** on the Function App.
+- **Rotating the storage key** (security best practice / required after any key leak) broke the Function App until you manually updated the setting.
+
+Migrating to **Flex Consumption (FC1)** unlocked:
+
+- **Identity-based `AzureWebJobsStorage`** via `AzureWebJobsStorage__credential=managedidentity` — no key on the Function App.
+- **App package pulled via MI** from the `deployment-package` blob container — no key for deployment either.
+- **`DefaultAzureCredential` in user code** (`GetProfile`, `SubmitContact`) — no `TABLE_STORAGE_CONNECTION` setting.
+- **Storage key rotation now a no-op.** Verified: rotating `key1` mid-test → `GET /api/profile` continued returning `HTTP 200` with zero downtime, zero restarts, zero config changes.
+
+You can verify it yourself:
+
+```powershell
+$az = 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'
+$rg = 'rg-portfolio-dev'; $sa = '<storage-account>'; $fn = '<function-app>'
+& $az storage account keys renew -g $rg -n $sa --key key1 --output none
+curl.exe -s -o nul -w "HTTP %{http_code}`n" "https://$fn.azurewebsites.net/api/profile"
+# Expect: HTTP 200
+```
+
+---
+
+## Cost model
 
 | Scenario | Cost |
-|----------|------|
+|---|---|
 | Deploy + test + destroy in one sitting | ~$0.00 |
-| Leave running for a week with no traffic | ~$0.01 |
-| 1,000 API calls in a day | ~$0.00 (well within free tier) |
-| 10,000 contact-form submissions in a month | ~$0.00 (Functions Y1 + Table writes + Logic App free tiers) |
+| Idle for a week with no traffic | ~$0.01 |
+| 1,000 API calls in a day | ~$0.00 (well within free tiers) |
+| 10,000 contact-form submissions/month | ~$0.00 (Functions FC1 + Table writes + Logic App free tiers) |
 
-> 💡 The Azure for Students subscription gives you **$100 in free credit** for 12 months and doesn't require a credit card. See [`azure-for-students-plan.md`](./azure-for-students-plan.md) for the full breakdown.
+> The Azure for Students subscription gives you **$100 in free credit** for 12 months and doesn't require a credit card. See [azure-for-students-plan.md](azure-for-students-plan.md) for the breakdown.
 
 ---
 
-## 🧪 If something breaks (common gotchas)
+## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `deploy.ps1` errors with "Please run 'az login'" | Run `az login`, then re-run the script. |
-| Deployment succeeds but `/api/profile` returns `"source": "default"` | The seed step didn't run or hadn't finished — re-run `scripts\seed-profile.ps1`. |
-| `func: command not found` | You only need Functions Core Tools for *local* development. `deploy.ps1` doesn't use it. |
-| Function App returns 500 errors | Open the resource in the Azure portal → **Application Insights** → **Failures**. Look at the latest exception. |
-| `GET /api/profile` works but `POST /api/contact` doesn't from the browser | CORS — make sure `deploy.ps1` succeeded at stage 5, or manually run `az functionapp cors add --name <fn> --resource-group rg-portfolio-dev --allowed-origins https://<sa>.z29.web.core.windows.net`. |
-| Smoke test fails on "Contact row persisted" | Table writes are eventually consistent; the test waits 3s. Re-run if you see a transient miss. |
-| `az` CLI not on `PATH` in scripts | The PowerShell scripts use the default Windows install path (`C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd`). Edit the `$az` variable if yours differs. |
-| Key Vault deployment fails with soft-delete name conflict | Names are reused across deletes for 7 days. Wait, purge the vault, or change `projectName`. |
-| `APP_SECRET` env var resolves to literal `@Microsoft.KeyVault(...)` | The Function App's Managed Identity is missing the `Key Vault Secrets User` RBAC role on the vault (see note in [Key Vault reference flow](#4-key-vault-reference-resolution-startuprefresh)). |
-| Frontend loads but profile says "Missing API base URL" | `config.js` wasn't regenerated. Re-run `deploy.ps1` (stage 5) or manually edit `config.js` in `$web` to set `apiBaseUrl`. |
-| Logic App run shows `contactName`, `contactEmail`, `contactMessage` as `(missing)` or `null` | The Function App is sending the body with chunked transfer encoding instead of a fixed `Content-Length` header, so `triggerBody()` is `null`. The current `SubmitContact/index.js` uses `fetch()` with an explicit `Content-Length` to avoid this. If you customise the call, **always set `Content-Length: Buffer.byteLength(payload)`**. Inspect the `debug_rawBody` field in the Compose action's output \u2014 it should contain the literal JSON string. |
-| `LOGIC_APP_CALLBACK_URL` env var is empty in the Function App | Bicep deploy order issue. `logicApp` module must deploy before `functionApp` so `listCallbackUrl()` is available. The current [main.bicep](main.bicep) declares them in the correct order; if you reorder, the Function App will get an empty string. |
+| `deploy.ps1` errors "Please run 'az login'" | Run `az login`, then re-run the script. |
+| Bicep fails with `ConflictError: A vault with the same name already exists in deleted state` | Stage **1a** of `deploy.ps1` purges soft-deleted vaults automatically. If you bypassed it, run `az keyvault list-deleted` + `az keyvault purge --name <name>` manually. |
+| Function deploy attempt 1 returns a 404 HTML page | Normal Flex SCM warm-up race. The hardened script polls the SCM endpoint and retries up to 3×. |
+| `GET /api/profile` returns `"source":"default"` | Seed step didn't run (or the row was deleted). Re-run `scripts\seed-profile.ps1 -ResourceGroup <rg> -StorageAccount <sa> -FunctionApp <fn>`. |
+| Frontend page shows the old broken state | **Browser cache.** Hard-reload (Ctrl+Shift+R) or open in an Incognito window. The site is served via Storage's static-website endpoint, which honors browser caching headers. |
+| `POST /api/contact` works but Logic App run shows fields as `(missing)` | The Function App is sending the body with chunked transfer encoding instead of a fixed `Content-Length` header, so `triggerBody()` is `null`. The current code uses `fetch()` with explicit `Content-Length: Buffer.byteLength(payload)`. Inspect `debug_rawBody` in the Compose action — it should contain the literal JSON. |
+| `process.env.APP_SECRET` resolves to the literal `@Microsoft.KeyVault(...)` string | The MI is missing the `Key Vault Secrets User` role. Verify [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep) deployed successfully. |
+| Function App returns 500 / Table-Storage errors mentioning auth | The MI is missing the storage RBAC roles. Verify [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) deployed. Note: role propagation can lag ~30 s after deployment. |
+| `--static-website` enable appears to no-op | Brand-new storage account data-plane is cold. The hardened script retries the enable until `staticWebsite.enabled == true`. |
+| `$web` container `ContainerNotFound` on upload | The container is created lazily a few seconds after the static-website toggle. The hardened script polls until it exists. |
+| Smoke test fails on "Contact row persisted" | Table writes are eventually consistent; the test waits ~3 s. Re-run if you see a transient miss. |
+| `az` CLI not on `PATH` inside scripts | Scripts use the Windows install path `C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd`. Edit the `$az` variable in `deploy.ps1` / `scripts/*.ps1` if yours differs. |
 
 ---
 
-## 🎯 What you'll learn by reading & running this
+## What you'll learn
 
-By the time you've deployed, tested, and destroyed this project once, you'll have hands-on experience with:
+By deploying, testing, and destroying this project once, you'll get hands-on experience with:
 
-- ✅ Writing and deploying **Bicep modules** that compose a real multi-service app
-- ✅ Threading **module outputs** between modules without naming gymnastics
-- ✅ Using **Azure CLI** (`az`) to log in, deploy templates, inspect resources, and seed data
-- ✅ The **serverless model** with Azure Functions (HTTP triggers, app settings, env vars, Oryx remote build)
-- ✅ A simple **NoSQL data model** in Azure Table Storage (partition key / row key)
-- ✅ Storing and **referencing secrets** from Key Vault using Managed Identity — no passwords in code
-- ✅ Building a tiny **HTTP-triggered Logic App workflow** with a JSON schema
-- ✅ Hosting a **static frontend** on Storage `$web` with HTTPS for free
-- ✅ Configuring **CORS** between a static site and a Function App
-- ✅ Reading **logs and exceptions** in Application Insights
-- ✅ Writing **PowerShell automation** for deploy / seed / smoke-test / destroy
-- ✅ **Cost-aware** cloud development on a student budget
-
-That's the foundation for almost any real cloud project — scaled down to something you can fully understand in an afternoon.
+- Writing and deploying **Bicep modules** that compose a real multi-service app
+- Threading **module outputs** between modules without naming gymnastics
+- **Flex Consumption** Functions (FC1) with **identity-based `AzureWebJobsStorage`**
+- **`DefaultAzureCredential`** in Node.js for keyless Storage access
+- **Granting RBAC roles** to a Managed Identity in Bicep using `guid(...)` for idempotency
+- **Key Vault references** in app settings, resolved by the platform via MI
+- A simple **NoSQL data model** in Azure Table Storage (partition key + row key)
+- Building a small **HTTP-triggered Logic App workflow** with a JSON schema and safe-navigation expressions
+- The **Logic App content-length gotcha** (chunked transfer breaks `triggerBody()`)
+- Hosting a **static frontend** on Storage `$web` with HTTPS for free
+- Configuring **CORS** between a static site and a Function App
+- Reading **logs and exceptions** in Application Insights
+- Writing **idempotent, race-aware deployment scripts** that retry around Azure data-plane warm-up
+- **Storage key rotation as a non-event** thanks to identity-based access
+- **Cost-aware** cloud development on a student budget
 
 ---
 
-## 📚 References
+## References
 
-- [Bicep Documentation](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/)
-- [Azure Functions — Node.js Developer Guide](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node)
-- [Azure Table Storage Overview](https://learn.microsoft.com/en-us/azure/storage/tables/table-storage-overview)
-- [Static Website Hosting on Azure Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-static-website)
-- [Key Vault References in App Settings](https://learn.microsoft.com/en-us/azure/app-service/app-service-key-vault-references)
-- [Logic Apps — Consumption Pricing](https://azure.microsoft.com/en-us/pricing/details/logic-apps/)
-- [Application Insights for Azure Functions](https://learn.microsoft.com/en-us/azure/azure-functions/functions-monitoring)
-- [Azure for Students](https://azure.microsoft.com/en-us/pricing/offers/ms-azr-0170p/)
-
+- [Bicep documentation](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
+- [Azure Functions — Flex Consumption plan](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan)
+- [Azure Functions — identity-based connections](https://learn.microsoft.com/azure/azure-functions/functions-reference#configure-an-identity-based-connection)
+- [`DefaultAzureCredential` (Azure SDK for JavaScript)](https://learn.microsoft.com/javascript/api/@azure/identity/defaultazurecredential)
+- [Azure Table Storage overview](https://learn.microsoft.com/azure/storage/tables/table-storage-overview)
+- [Static website hosting on Azure Storage](https://learn.microsoft.com/azure/storage/blobs/storage-blob-static-website)
+- [Key Vault references in app settings](https://learn.microsoft.com/azure/app-service/app-service-key-vault-references)
+- [Logic Apps — Consumption pricing](https://azure.microsoft.com/pricing/details/logic-apps/)
+- [Application Insights for Azure Functions](https://learn.microsoft.com/azure/azure-functions/functions-monitoring)
+- [Azure for Students](https://azure.microsoft.com/pricing/offers/ms-azr-0170p/)
