@@ -434,20 +434,20 @@ How the Function App reads `app-secret` from Key Vault **without ever seeing a p
 ```mermaid
 sequenceDiagram
     autonumber
-    participant F as Function App (System-Assigned MI)
-    participant Plat as Functions platform host
-    participant AAD as Azure AD (IMDS endpoint)
-    participant KV as Key Vault (RBAC enabled)
+    participant F as "Function App - System-Assigned MI"
+    participant Plat as "Functions platform host"
+    participant AAD as "Azure AD - IMDS endpoint"
+    participant KV as "Key Vault - RBAC enabled"
 
-    Note over F,Plat: At app start (and on setting refresh)
-    Plat->>Plat: read app setting APP_SECRET<br/>= Microsoft.KeyVault(VaultName=...;SecretName=app-secret)
-    Plat->>+AAD: request token (resource=vault.azure.net)
-    AAD-->>-Plat: AAD access token scoped to MI principal
-    Plat->>+KV: GET /secrets/app-secret  (Authorization: Bearer ...)
-    KV->>KV: RBAC check (MI has "Key Vault Secrets User")
+    Note over F,Plat: At app start and on setting refresh
+    Plat->>Plat: read app setting APP_SECRET<br/>Key Vault reference: vault=NAME, secret=app-secret
+    Plat->>+AAD: request token for vault.azure.net
+    AAD-->>-Plat: access token scoped to MI principal
+    Plat->>+KV: GET /secrets/app-secret with Bearer token
+    KV->>KV: RBAC check - MI has Key Vault Secrets User
     KV-->>-Plat: secret value
-    Plat-->>F: process.env.APP_SECRET = <secret>
-    Note over F: Function code reads process.env.APP_SECRET<br/>— no credential in source
+    Plat-->>F: process.env.APP_SECRET set to secret
+    Note over F: Function code reads process.env.APP_SECRET<br/>no credential in source
 ```
 
 > The required `Key Vault Secrets User` role is granted by [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep). If `process.env.APP_SECRET` ever resolves to the literal `@Microsoft.KeyVault(...)` string in your Function logs, the role assignment didn't apply.
@@ -457,10 +457,10 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant F as Function App<br/>(Functions host)
+    participant F as "Function App - Functions host"
     participant AAD as Azure AD
-    participant Blob as Storage Blob<br/>deployment-package container
-    participant Tbl as Storage Tables<br/>(AzureWebJobsStorage system tables)
+    participant Blob as "Storage Blob - deployment-package container"
+    participant Tbl as "Storage Tables - AzureWebJobsStorage system tables"
 
     Note over F: Settings:<br/>AzureWebJobsStorage__accountName = STORAGE<br/>AzureWebJobsStorage__credential   = managedidentity
     F->>AAD: get token (resource=storage.azure.com) via MI
