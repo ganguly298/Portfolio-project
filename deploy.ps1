@@ -22,9 +22,10 @@ Write-Host "`n[1/6] Ensuring Resource Group: $ResourceGroup..." -ForegroundColor
 & $az group create --name $ResourceGroup --location $Location --output none
 
 # ─── 1a. Purge any soft-deleted Key Vaults that would block Bicep ─
-# KV soft-delete (90-day retention) is mandatory; a same-named vault in
-# deleted state causes ConflictError on redeploy. Purge anything that
-# matches our project prefix in this location before deploying.
+# KV soft-delete is mandatory (retention configured to 7 days in
+# modules/keyVault.bicep); a same-named vault in deleted state causes
+# ConflictError on redeploy. Purge anything matching our project prefix
+# in this location before deploying.
 Write-Host "[1a/6] Checking for soft-deleted Key Vaults to purge..." -ForegroundColor Yellow
 $deleted = & $az keyvault list-deleted -o json | ConvertFrom-Json |
     Where-Object { $_.name -like 'portfolio*' -and $_.properties.location -eq $Location }
