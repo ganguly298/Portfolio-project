@@ -42,7 +42,7 @@ resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
     tier: 'FlexConsumption'
   }
   properties: {
-    reserved: true
+    reserved: true // Linux
   }
 }
 
