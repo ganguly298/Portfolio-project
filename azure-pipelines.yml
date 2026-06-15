@@ -76,16 +76,44 @@ stages:
                 Write-Host "API:      $api"
                 Write-Host "Frontend: $fe"
 
+                # Flex Consumption can take 60-180s after deploy for new
+                # functions (especially ones with npm deps) to register on the
+                # host. Retry each endpoint until it returns success, with a
+                # 5-minute cap, before failing the smoke test.
+                function Invoke-WithRetry {
+                    param([string]$Name, [scriptblock]$Call)
+                    $deadline = (Get-Date).AddMinutes(5)
+                    $attempt  = 0
+                    while ((Get-Date) -lt $deadline) {
+                        $attempt++
+                        try {
+                            $r = & $Call
+                            if ($r -and $r.success) {
+                                Write-Host "  $Name OK on attempt $attempt" -ForegroundColor Green
+                                return $r
+                            }
+                            Write-Host "  $Name returned no success flag on attempt $attempt, retrying..." -ForegroundColor DarkYellow
+                        } catch {
+                            $code = $_.Exception.Response.StatusCode.value__
+                            Write-Host "  $Name attempt $attempt failed (HTTP $code), retrying in 15s..." -ForegroundColor DarkYellow
+                        }
+                        Start-Sleep 15
+                    }
+                    throw "$Name never succeeded within timeout"
+                }
+
                 Write-Host "`n--- GET /api/profile ---"
-                $profile = Invoke-RestMethod -Uri "$api/api/profile" -Method Get
+                $profile = Invoke-WithRetry -Name "profile" -Call {
+                    Invoke-RestMethod -Uri "$api/api/profile" -Method Get -TimeoutSec 20
+                }
                 $profile | ConvertTo-Json -Depth 4
 
                 Write-Host "`n--- POST /api/visitors ---"
-                $visit = Invoke-RestMethod -Uri "$api/api/visitors" -Method Post -ContentType "application/json"
+                $visit = Invoke-WithRetry -Name "visitors" -Call {
+                    Invoke-RestMethod -Uri "$api/api/visitors" -Method Post -ContentType "application/json" -TimeoutSec 20
+                }
                 $visit | ConvertTo-Json
 
-                if (-not $profile.success) { throw "Profile API failed" }
-                if (-not $visit.success)   { throw "Visitor counter failed" }
                 Write-Host "`nAll smoke tests passed." -ForegroundColor Green
 
   - stage: Cleanup
