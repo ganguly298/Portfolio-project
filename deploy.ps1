@@ -69,12 +69,27 @@ foreach ($f in $existingFuncs) {
 
 # ─── 3. Bicep ────────────────────────────────────────────────
 Write-Host "[2/6] Deploying Bicep template (~2-3 minutes)..." -ForegroundColor Yellow
+
+# Write parameters to a temp JSON file so cmd.exe never sees the secret
+# value on the command line (avoids issues with special chars like &, |, <, >).
+$paramsFile = Join-Path $env:TEMP "portfolio-params-$(Get-Random).json"
+@{
+    '$schema'      = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+    contentVersion = '1.0.0.0'
+    parameters     = @{
+        projectName = @{ value = 'portfolio' }
+        appSecret   = @{ value = $plainSecret }
+    }
+} | ConvertTo-Json -Depth 5 | Set-Content -Path $paramsFile -Encoding utf8
+
 $result = & $az deployment group create `
     --resource-group $ResourceGroup `
     --template-file "$PSScriptRoot\main.bicep" `
-    --parameters projectName=portfolio appSecret=$plainSecret `
+    --parameters "@$paramsFile" `
     --query "properties.outputs" `
     --output json | ConvertFrom-Json
+
+Remove-Item $paramsFile -Force -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "`nBicep deployment failed. Check errors above." -ForegroundColor Red
