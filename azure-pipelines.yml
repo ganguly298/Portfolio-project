@@ -19,7 +19,7 @@ parameters:
     type: string
     default: centralindia
   - name: cleanupOnFailure
-    displayName: Delete RG + purge KV if any stage fails
+    displayName: Delete all RG contents + purge KV if any stage fails
     type: boolean
     default: true
 
@@ -89,17 +89,17 @@ stages:
                 Write-Host "`nAll smoke tests passed." -ForegroundColor Green
 
   - stage: Cleanup
-    displayName: Cleanup on failure (delete RG + purge KV)
+    displayName: Cleanup on failure (delete RG contents)
     dependsOn: Deploy
     # Run ONLY if the Deploy stage failed AND the user opted in (default: true).
     condition: and(failed(), eq('${{ parameters.cleanupOnFailure }}', 'true'))
     jobs:
       - job: Teardown
-        displayName: Tear down everything created by this run
+        displayName: Delete every resource the pipeline created
         timeoutInMinutes: 30
         steps:
           - task: AzureCLI@2
-            displayName: Delete resource group + purge soft-deleted Key Vaults
+            displayName: Delete all resources inside RG + purge soft-deleted Key Vaults
             inputs:
               azureSubscription: $(azureServiceConnection)
               scriptType: pscore
@@ -108,19 +108,37 @@ stages:
                 $rg  = "${{ parameters.resourceGroup }}"
                 $loc = "${{ parameters.location }}"
 
-                Write-Host "Deploy stage failed — cleaning up subscription..." -ForegroundColor Yellow
+                Write-Host "Deploy stage failed — cleaning up resources inside '$rg'..." -ForegroundColor Yellow
+                Write-Host "(The resource group itself is preserved — only its contents are removed.)`n"
 
-                $exists = az group exists --name $rg
-                if ($exists -eq 'true') {
-                    Write-Host "Deleting resource group '$rg' (waiting for completion)..."
-                    az group delete --name $rg --yes --output none
-                    Write-Host "Resource group deleted." -ForegroundColor Green
+                # Preserve the pipeline's own managed identity so we don't sever
+                # the credential we're authenticating with right now.
+                $miName = "portfolio-pipeline-mi"
+
+                $ids = az resource list -g $rg --query "[?name!='$miName'].id" -o tsv
+                if (-not $ids) {
+                    Write-Host "RG is already empty (apart from $miName). Nothing to delete."
                 } else {
-                    Write-Host "Resource group '$rg' does not exist — nothing to delete."
+                    $idArray = $ids -split "`n" | Where-Object { $_ }
+                    Write-Host "Found $($idArray.Count) resource(s) to delete:"
+                    $idArray | ForEach-Object { Write-Host "  - $_" }
+
+                    # Bulk delete (waits for completion). az resource delete accepts
+                    # multiple --ids and handles dependency ordering best-effort.
+                    Write-Host "`nDeleting (this may take a few minutes)..."
+                    az resource delete --ids @idArray --verbose
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host "Bulk delete reported errors. Retrying any leftovers individually..." -ForegroundColor DarkYellow
+                        $leftover = az resource list -g $rg --query "[?name!='$miName'].id" -o tsv
+                        foreach ($id in ($leftover -split "`n" | Where-Object { $_ })) {
+                            Write-Host "  Retry: $id"
+                            az resource delete --ids $id --verbose 2>$null
+                        }
+                    }
                 }
 
-                # Key Vault is soft-deleted by default; purge anything left behind
-                # so the next pipeline run starts from a truly clean slate.
+                # Key Vault is soft-deleted by default (mandatory in our KV module).
+                # Purge so the next pipeline run can recreate a vault with the same name.
                 Write-Host "`nPurging soft-deleted Key Vaults matching 'portfolio*' in $loc..."
                 $deleted = az keyvault list-deleted --query "[?starts_with(name,'portfolio') && properties.location=='$loc'].name" -o tsv
                 if ($deleted) {
@@ -135,5 +153,5 @@ stages:
 
                 # Fail the stage so the overall pipeline run is still marked failed
                 # (cleanup succeeding doesn't mean the deploy succeeded).
-                Write-Host "`nCleanup complete. Original Deploy failure preserved." -ForegroundColor Yellow
+                Write-Host "`nCleanup complete. RG '$rg' preserved; deploy failure preserved." -ForegroundColor Yellow
                 exit 1
