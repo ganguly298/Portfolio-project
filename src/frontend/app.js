@@ -11,6 +11,7 @@ const linkedinLink = document.getElementById('linkedin-link');
 const skillsList = document.getElementById('skills-list');
 const form = document.getElementById('contact-form');
 const formStatus = document.getElementById('form-status');
+const visitorCount = document.getElementById('visitor-count');
 
 if (!apiBaseUrl) {
     statusPill.textContent = 'Missing API base URL';
@@ -18,6 +19,22 @@ if (!apiBaseUrl) {
     profileJson.textContent = 'config.js was not generated during deployment.';
 } else {
     loadProfile();
+    bumpVisitorCount();
+}
+
+async function bumpVisitorCount() {
+    if (!visitorCount) return;
+    try {
+        const response = await fetch(`${apiBaseUrl}/api/visitors`, { method: 'POST' });
+        const data = await response.json();
+        if (data && typeof data.count === 'number') {
+            visitorCount.textContent = `Visitors: ${data.count.toLocaleString()}`;
+        } else {
+            visitorCount.textContent = 'Visitors: unavailable';
+        }
+    } catch (err) {
+        visitorCount.textContent = 'Visitors: unavailable';
+    }
 }
 
 form.addEventListener('submit', async (event) => {
