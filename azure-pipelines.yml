@@ -18,6 +18,10 @@ parameters:
     displayName: Azure region
     type: string
     default: centralindia
+  - name: cleanupOnFailure
+    displayName: Delete RG + purge KV if any stage fails
+    type: boolean
+    default: true
 
 variables:
   - name: azureServiceConnection
@@ -83,3 +87,53 @@ stages:
                 if (-not $profile.success) { throw "Profile API failed" }
                 if (-not $visit.success)   { throw "Visitor counter failed" }
                 Write-Host "`nAll smoke tests passed." -ForegroundColor Green
+
+  - stage: Cleanup
+    displayName: Cleanup on failure (delete RG + purge KV)
+    dependsOn: Deploy
+    # Run ONLY if the Deploy stage failed AND the user opted in (default: true).
+    condition: and(failed(), eq('${{ parameters.cleanupOnFailure }}', 'true'))
+    jobs:
+      - job: Teardown
+        displayName: Tear down everything created by this run
+        timeoutInMinutes: 30
+        steps:
+          - task: AzureCLI@2
+            displayName: Delete resource group + purge soft-deleted Key Vaults
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $rg  = "${{ parameters.resourceGroup }}"
+                $loc = "${{ parameters.location }}"
+
+                Write-Host "Deploy stage failed — cleaning up subscription..." -ForegroundColor Yellow
+
+                $exists = az group exists --name $rg
+                if ($exists -eq 'true') {
+                    Write-Host "Deleting resource group '$rg' (waiting for completion)..."
+                    az group delete --name $rg --yes --output none
+                    Write-Host "Resource group deleted." -ForegroundColor Green
+                } else {
+                    Write-Host "Resource group '$rg' does not exist — nothing to delete."
+                }
+
+                # Key Vault is soft-deleted by default; purge anything left behind
+                # so the next pipeline run starts from a truly clean slate.
+                Write-Host "`nPurging soft-deleted Key Vaults matching 'portfolio*' in $loc..."
+                $deleted = az keyvault list-deleted --query "[?starts_with(name,'portfolio') && properties.location=='$loc'].name" -o tsv
+                if ($deleted) {
+                    foreach ($name in ($deleted -split "`n" | Where-Object { $_ })) {
+                        Write-Host "  Purging $name..."
+                        az keyvault purge --name $name --location $loc --no-wait
+                    }
+                    Write-Host "All matching vaults purged." -ForegroundColor Green
+                } else {
+                    Write-Host "No soft-deleted vaults to purge."
+                }
+
+                # Fail the stage so the overall pipeline run is still marked failed
+                # (cleanup succeeding doesn't mean the deploy succeeded).
+                Write-Host "`nCleanup complete. Original Deploy failure preserved." -ForegroundColor Yellow
+                exit 1
