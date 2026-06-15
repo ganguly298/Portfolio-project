@@ -1,0 +1,85 @@
+# ============================================================
+# Azure Pipelines — Portfolio platform (manual trigger only)
+# ============================================================
+# Runs the same deploy.ps1 that works locally, but inside an
+# AzureCLI@2 task so `az` is pre-authenticated via the service
+# connection. No CI on push, no PR validation — manual only.
+# ============================================================
+
+trigger: none
+pr: none
+
+parameters:
+  - name: resourceGroup
+    displayName: Resource group
+    type: string
+    default: rg-portfolio-dev
+  - name: location
+    displayName: Azure region
+    type: string
+    default: centralindia
+
+variables:
+  - name: azureServiceConnection
+    value: portfolio-azure-sc   # change to whatever you named the service connection
+  # APP_SECRET is defined as a SECRET pipeline variable in the UI
+  # (Pipelines → Edit → Variables → New → check "Keep this value secret").
+
+pool:
+  vmImage: windows-latest       # PowerShell + Windows az.cmd path match local behaviour
+
+stages:
+  - stage: Deploy
+    displayName: Deploy infra, API and frontend
+    jobs:
+      - job: Deploy
+        displayName: Run deploy.ps1
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+            displayName: Checkout repo
+
+          - task: AzureCLI@2
+            displayName: Run deploy.ps1 (Bicep + API + Frontend)
+            env:
+              APP_SECRET: $(APP_SECRET)
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                Write-Host "Working directory: $PWD"
+                Write-Host "az version:"
+                az version --output table
+                ./deploy.ps1 `
+                  -ResourceGroup "${{ parameters.resourceGroup }}" `
+                  -Location "${{ parameters.location }}" `
+                  -AppSecret $env:APP_SECRET
+
+          - task: AzureCLI@2
+            displayName: Smoke test endpoints
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $rg = "${{ parameters.resourceGroup }}"
+                $func = az functionapp list -g $rg --query "[?starts_with(name,'portfolio-func-')].name | [0]" -o tsv
+                $sa   = az storage account list -g $rg --query "[?starts_with(name,'portfoliost')].name | [0]" -o tsv
+                $api  = "https://$func.azurewebsites.net"
+                $fe   = "https://$sa.z29.web.core.windows.net"
+
+                Write-Host "API:      $api"
+                Write-Host "Frontend: $fe"
+
+                Write-Host "`n--- GET /api/profile ---"
+                $profile = Invoke-RestMethod -Uri "$api/api/profile" -Method Get
+                $profile | ConvertTo-Json -Depth 4
+
+                Write-Host "`n--- POST /api/visitors ---"
+                $visit = Invoke-RestMethod -Uri "$api/api/visitors" -Method Post -ContentType "application/json"
+                $visit | ConvertTo-Json
+
+                if (-not $profile.success) { throw "Profile API failed" }
+                if (-not $visit.success)   { throw "Visitor counter failed" }
+                Write-Host "`nAll smoke tests passed." -ForegroundColor Green

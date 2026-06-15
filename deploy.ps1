@@ -4,18 +4,28 @@
 
 param(
     [string]$ResourceGroup = "rg-portfolio-dev",
-    [string]$Location = "centralindia"
+    [string]$Location = "centralindia",
+    [string]$AppSecret = $env:APP_SECRET
 )
 
 Write-Host "=== Student Portfolio Platform - Deploy (Flex Consumption) ===" -ForegroundColor Cyan
 Write-Host ""
 
-$appSecret = Read-Host -Prompt "Enter an app secret (any string, stored in Key Vault)" -AsSecureString
-$plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($appSecret)
-)
+if (-not $AppSecret) {
+    $secure = Read-Host -Prompt "Enter an app secret (any string, stored in Key Vault)" -AsSecureString
+    $AppSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    )
+}
+$plainSecret = $AppSecret
 
-$az = 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'
+# Resolve `az` per-platform: Windows CLI installer puts it at a fixed path,
+# Linux/Mac (and pipeline agents) just have `az` on PATH.
+if ($IsWindows -and (Test-Path 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd')) {
+    $az = 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'
+} else {
+    $az = 'az'
+}
 
 # ─── 1. Resource group ───────────────────────────────────────
 Write-Host "`n[1/6] Ensuring Resource Group: $ResourceGroup..." -ForegroundColor Yellow
