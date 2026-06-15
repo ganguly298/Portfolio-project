@@ -139,16 +139,19 @@ stages:
                 Write-Host "Deploy stage failed — cleaning up resources inside '$rg'..." -ForegroundColor Yellow
                 Write-Host "(The resource group itself is preserved — only its contents are removed.)`n"
 
-                # Preserve the pipeline's own managed identity so we don't sever
-                # the credential we're authenticating with right now.
+                # Preserve resources we don't want recreated on every run:
+                #  - portfolio-pipeline-mi : the MI we're authenticating with right now
+                #  - any Microsoft.KeyVault/vaults : KV soft-delete makes recreation slow,
+                #    so keep the vault across runs (Bicep is idempotent on it).
                 $miName = "portfolio-pipeline-mi"
+                $preserveQuery = "[?name!='$miName' && type!='Microsoft.KeyVault/vaults'].id"
 
-                $ids = az resource list -g $rg --query "[?name!='$miName'].id" -o tsv
+                $ids = az resource list -g $rg --query $preserveQuery -o tsv
                 if (-not $ids) {
-                    Write-Host "RG is already empty (apart from $miName). Nothing to delete."
+                    Write-Host "RG has nothing to delete (MI and KV preserved)."
                 } else {
                     $idArray = $ids -split "`n" | Where-Object { $_ }
-                    Write-Host "Found $($idArray.Count) resource(s) to delete:"
+                    Write-Host "Found $($idArray.Count) resource(s) to delete (MI + KV preserved):"
                     $idArray | ForEach-Object { Write-Host "  - $_" }
 
                     # Bulk delete (waits for completion). az resource delete accepts
@@ -157,7 +160,7 @@ stages:
                     az resource delete --ids @idArray --verbose
                     if ($LASTEXITCODE -ne 0) {
                         Write-Host "Bulk delete reported errors. Retrying any leftovers individually..." -ForegroundColor DarkYellow
-                        $leftover = az resource list -g $rg --query "[?name!='$miName'].id" -o tsv
+                        $leftover = az resource list -g $rg --query $preserveQuery -o tsv
                         foreach ($id in ($leftover -split "`n" | Where-Object { $_ })) {
                             Write-Host "  Retry: $id"
                             az resource delete --ids $id --verbose 2>$null
@@ -165,18 +168,17 @@ stages:
                     }
                 }
 
-                # Key Vault is soft-deleted by default (mandatory in our KV module).
-                # Purge so the next pipeline run can recreate a vault with the same name.
-                Write-Host "`nPurging soft-deleted Key Vaults matching 'portfolio*' in $loc..."
+                # Safety net only: if a KV slipped into soft-delete from a previous
+                # cleanup pattern, purge it now so the next run isn't blocked.
+                Write-Host "`nSafety check: any soft-deleted Key Vaults matching 'portfolio*' in $loc?"
                 $deleted = az keyvault list-deleted --query "[?starts_with(name,'portfolio') && properties.location=='$loc'].name" -o tsv
                 if ($deleted) {
                     foreach ($name in ($deleted -split "`n" | Where-Object { $_ })) {
-                        Write-Host "  Purging $name..."
+                        Write-Host "  Purging stray soft-deleted vault: $name..."
                         az keyvault purge --name $name --location $loc --no-wait
                     }
-                    Write-Host "All matching vaults purged." -ForegroundColor Green
                 } else {
-                    Write-Host "No soft-deleted vaults to purge."
+                    Write-Host "None — KV preservation is working as expected."
                 }
 
                 # Fail the stage so the overall pipeline run is still marked failed

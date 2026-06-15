@@ -118,6 +118,15 @@ $zipPath = Join-Path $env:TEMP "portfolio-api-$(Get-Date -Format 'yyyyMMddHHmmss
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path (Join-Path $apiSrc '*') -DestinationPath $zipPath -Force
 
+# Diagnostic: list what actually went into the zip so we can confirm every
+# function folder is present before the host tries to register them.
+Write-Host "  Zip contents:" -ForegroundColor DarkGray
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+$archive.Entries | Select-Object -ExpandProperty FullName | Sort-Object |
+    ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+$archive.Dispose()
+
 # Wait for the Flex SCM/Kudu site to be reachable (it lags ~30-60s behind ARM).
 $scmUrl = "https://$funcName.scm.azurewebsites.net"
 Write-Host "  Waiting for SCM site at $scmUrl ..." -ForegroundColor DarkYellow
@@ -150,6 +159,21 @@ if (-not $deployOk) {
     exit 1
 }
 Write-Host "Function code deployed." -ForegroundColor Green
+
+# Diagnostic: wait briefly for the host to scan the package, then list
+# the functions it actually registered. If something is missing, this is
+# where we'll see it (instead of guessing from 404s in smoke tests).
+Write-Host "  Waiting 60s for host to scan deployed package..." -ForegroundColor DarkGray
+Start-Sleep 60
+Write-Host "  Registered functions on $funcName :" -ForegroundColor DarkGray
+$registered = & $az functionapp function list -g $ResourceGroup -n $funcName --query "[].name" -o tsv 2>$null
+if ($registered) {
+    ($registered -split "`n" | Where-Object { $_ }) | ForEach-Object {
+        Write-Host "    - $_" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "    (none reported yet by ARM; host may still be initialising)" -ForegroundColor DarkYellow
+}
 
 # ─── 5. Publish frontend ─────────────────────────────────────
 Write-Host "[5/6] Publishing frontend..." -ForegroundColor Yellow
