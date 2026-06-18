@@ -56,6 +56,11 @@ resource contactTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
   name: 'contacts'
 }
 
+resource counterTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-04-01' = {
+  parent: tableService
+  name: 'counters'
+}
+
 output storageAccountName string = storageAccount.name
 output storageAccountId string = storageAccount.id
 output staticWebsiteUrl string = storageAccount.properties.primaryEndpoints.web

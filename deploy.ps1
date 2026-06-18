@@ -4,18 +4,28 @@
 
 param(
     [string]$ResourceGroup = "rg-portfolio-dev",
-    [string]$Location = "centralindia"
+    [string]$Location = "centralindia",
+    [string]$AppSecret = $env:APP_SECRET
 )
 
 Write-Host "=== Student Portfolio Platform - Deploy (Flex Consumption) ===" -ForegroundColor Cyan
 Write-Host ""
 
-$appSecret = Read-Host -Prompt "Enter an app secret (any string, stored in Key Vault)" -AsSecureString
-$plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($appSecret)
-)
+if (-not $AppSecret) {
+    $secure = Read-Host -Prompt "Enter an app secret (any string, stored in Key Vault)" -AsSecureString
+    $AppSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    )
+}
+$plainSecret = $AppSecret
 
-$az = 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'
+# Resolve `az` per-platform: Windows CLI installer puts it at a fixed path,
+# Linux/Mac (and pipeline agents) just have `az` on PATH.
+if ($IsWindows -and (Test-Path 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd')) {
+    $az = 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd'
+} else {
+    $az = 'az'
+}
 
 # ─── 1. Resource group ───────────────────────────────────────
 Write-Host "`n[1/6] Ensuring Resource Group: $ResourceGroup..." -ForegroundColor Yellow
@@ -59,12 +69,27 @@ foreach ($f in $existingFuncs) {
 
 # ─── 3. Bicep ────────────────────────────────────────────────
 Write-Host "[2/6] Deploying Bicep template (~2-3 minutes)..." -ForegroundColor Yellow
+
+# Write parameters to a temp JSON file so cmd.exe never sees the secret
+# value on the command line (avoids issues with special chars like &, |, <, >).
+$paramsFile = Join-Path $env:TEMP "portfolio-params-$(Get-Random).json"
+@{
+    '$schema'      = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+    contentVersion = '1.0.0.0'
+    parameters     = @{
+        projectName = @{ value = 'portfolio' }
+        appSecret   = @{ value = $plainSecret }
+    }
+} | ConvertTo-Json -Depth 5 | Set-Content -Path $paramsFile -Encoding utf8
+
 $result = & $az deployment group create `
     --resource-group $ResourceGroup `
     --template-file "$PSScriptRoot\main.bicep" `
-    --parameters projectName=portfolio appSecret=$plainSecret `
+    --parameters "@$paramsFile" `
     --query "properties.outputs" `
     --output json | ConvertFrom-Json
+
+Remove-Item $paramsFile -Force -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "`nBicep deployment failed. Check errors above." -ForegroundColor Red
@@ -92,6 +117,15 @@ $apiSrc = Join-Path $PSScriptRoot 'src\api'
 $zipPath = Join-Path $env:TEMP "portfolio-api-$(Get-Date -Format 'yyyyMMddHHmmss').zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path (Join-Path $apiSrc '*') -DestinationPath $zipPath -Force
+
+# Diagnostic: list what actually went into the zip so we can confirm every
+# function folder is present before the host tries to register them.
+Write-Host "  Zip contents:" -ForegroundColor DarkGray
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+$archive.Entries | Select-Object -ExpandProperty FullName | Sort-Object |
+    ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+$archive.Dispose()
 
 # Wait for the Flex SCM/Kudu site to be reachable (it lags ~30-60s behind ARM).
 $scmUrl = "https://$funcName.scm.azurewebsites.net"
@@ -125,6 +159,21 @@ if (-not $deployOk) {
     exit 1
 }
 Write-Host "Function code deployed." -ForegroundColor Green
+
+# Diagnostic: wait briefly for the host to scan the package, then list
+# the functions it actually registered. If something is missing, this is
+# where we'll see it (instead of guessing from 404s in smoke tests).
+Write-Host "  Waiting 60s for host to scan deployed package..." -ForegroundColor DarkGray
+Start-Sleep 60
+Write-Host "  Registered functions on $funcName :" -ForegroundColor DarkGray
+$registered = & $az functionapp function list -g $ResourceGroup -n $funcName --query "[].name" -o tsv 2>$null
+if ($registered) {
+    ($registered -split "`n" | Where-Object { $_ }) | ForEach-Object {
+        Write-Host "    - $_" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "    (none reported yet by ARM; host may still be initialising)" -ForegroundColor DarkYellow
+}
 
 # ─── 5. Publish frontend ─────────────────────────────────────
 Write-Host "[5/6] Publishing frontend..." -ForegroundColor Yellow
