@@ -32,6 +32,23 @@ param allowedOrigins array = [
   'http://localhost:3000'
 ]
 
+@description('Enable Microsoft Entra ID authentication for HTTP API requests')
+param enableEntraAuth bool = false
+
+@description('Microsoft Entra tenant ID used by the built-in authentication provider')
+param entraTenantId string = ''
+
+@description('Client/application ID of the API app registration')
+param entraApiClientId string = ''
+
+@description('Allowed token audiences for the API. Defaults to the API client ID and api:// client ID.')
+param entraAllowedAudiences array = []
+
+var defaultEntraAudiences = empty(entraAllowedAudiences) && !empty(entraApiClientId) ? [
+  entraApiClientId
+  'api://${entraApiClientId}'
+] : entraAllowedAudiences
+
 // Flex Consumption plan (FC1) — Linux only
 resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${functionAppName}-plan'
@@ -109,6 +126,41 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       cors: {
         allowedOrigins: allowedOrigins
       }
+    }
+  }
+}
+
+resource authSettings 'Microsoft.Web/sites/config@2023-12-01' = if (enableEntraAuth) {
+  parent: functionApp
+  name: 'authsettingsV2'
+  properties: {
+    platform: {
+      enabled: true
+      runtimeVersion: '~1'
+    }
+    globalValidation: {
+      requireAuthentication: true
+      unauthenticatedClientAction: 'Return401'
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: entraApiClientId
+          openIdIssuer: '${environment().authentication.loginEndpoint}${entraTenantId}/v2.0'
+        }
+        validation: {
+          allowedAudiences: defaultEntraAudiences
+        }
+      }
+    }
+    login: {
+      tokenStore: {
+        enabled: false
+      }
+    }
+    httpSettings: {
+      requireHttps: true
     }
   }
 }

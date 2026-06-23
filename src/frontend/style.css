@@ -83,6 +83,26 @@ h2 {
     margin-top: 28px;
 }
 
+.auth-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.auth-status {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--muted);
+    font-size: 14px;
+}
+
 .visitor-count {
     margin-top: 18px;
     font-size: 0.85rem;
@@ -202,6 +222,17 @@ h2 {
     color: var(--ink);
     border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.9);
+}
+
+.button:disabled,
+.contact-form input:disabled,
+.contact-form textarea:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+[hidden] {
+    display: none !important;
 }
 
 .form-status {

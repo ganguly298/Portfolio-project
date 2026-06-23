@@ -20,6 +20,11 @@
                 <a id="github-link" class="button ghost" href="#" target="_blank" rel="noreferrer">GitHub</a>
                 <a id="linkedin-link" class="button ghost" href="#" target="_blank" rel="noreferrer">LinkedIn</a>
             </div>
+            <div id="auth-bar" class="auth-bar" hidden>
+                <span id="auth-status" class="auth-status">Not signed in</span>
+                <button id="login-button" class="button solid" type="button">Sign in</button>
+                <button id="logout-button" class="button ghost" type="button" hidden>Sign out</button>
+            </div>
             <p id="visitor-count" class="visitor-count">Visitors: ...</p>
         </header>
 
@@ -59,6 +64,7 @@
         </main>
     </div>
 
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
     <script src="config.js"></script>
     <script src="app.js"></script>
 </body>

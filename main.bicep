@@ -16,6 +16,15 @@ param projectName string = 'portfolio'
 @description('A secret value to store in Key Vault (demonstrates secrets management)')
 param appSecret string
 
+@description('Enable Microsoft Entra ID authentication for the Function App API')
+param enableEntraAuth bool = false
+
+@description('Microsoft Entra tenant ID used by the Function App authentication provider')
+param entraTenantId string = ''
+
+@description('Client/application ID of the API app registration used by Function App authentication')
+param entraApiClientId string = ''
+
 var uniqueSuffix = uniqueString(resourceGroup().id)
 var kvName = '${projectName}kv${uniqueSuffix}'
 var storageAccountName = '${projectName}st${uniqueSuffix}'
@@ -71,6 +80,9 @@ module functionApp 'modules/functionApp.bicep' = {
     appInsightsInstrumentationKey: monitoring.outputs.instrumentationKey
     keyVaultName: keyVault.outputs.keyVaultName
     logicAppCallbackUrl: logicApp.outputs.logicAppCallbackUrl
+    enableEntraAuth: enableEntraAuth
+    entraTenantId: entraTenantId
+    entraApiClientId: entraApiClientId
   }
 }
 
@@ -95,6 +107,7 @@ module kvRoleAssignment 'modules/kvRoleAssignment.bicep' = {
 // ─── Outputs ─────────────────────────────────────────────────
 output functionAppUrl string = functionApp.outputs.functionAppUrl
 output functionAppName string = functionApp.outputs.functionAppName
+output entraAuthEnabled bool = enableEntraAuth
 output frontendUrl string = storage.outputs.staticWebsiteUrl
 output keyVaultUri string = keyVault.outputs.keyVaultUri
 output logicAppEndpoint string = logicApp.outputs.logicAppEndpoint

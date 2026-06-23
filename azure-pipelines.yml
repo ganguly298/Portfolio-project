@@ -22,12 +22,34 @@ parameters:
     displayName: Delete all RG contents + purge KV if any stage fails
     type: boolean
     default: true
+  - name: enableEntraAuth
+    displayName: Enable Microsoft Entra ID authentication for the Function API
+    type: boolean
+    default: false
+  - name: entraTenantId
+    displayName: Entra tenant ID (leave blank when auth is disabled)
+    type: string
+    default: ''
+  - name: entraFrontendClientId
+    displayName: Frontend SPA app registration client ID
+    type: string
+    default: ''
+  - name: entraApiClientId
+    displayName: API app registration client ID
+    type: string
+    default: ''
+  - name: entraApiScope
+    displayName: API scope (blank = derived as api://<entraApiClientId>/access_as_user)
+    type: string
+    default: ''
 
 variables:
   - name: azureServiceConnection
     value: portfolio-azure-sc   # change to whatever you named the service connection
   # APP_SECRET is defined as a SECRET pipeline variable in the UI
   # (Pipelines → Edit → Variables → New → check "Keep this value secret").
+  # ENTRA_* variables can also be stored as pipeline variables instead of
+  # using the runtime parameters above — deploy.ps1 reads both.
 
 pool:
   vmImage: windows-latest       # PowerShell + Windows az.cmd path match local behaviour
@@ -47,6 +69,11 @@ stages:
             displayName: Run deploy.ps1 (Bicep + API + Frontend)
             env:
               APP_SECRET: $(APP_SECRET)
+              # Public Entra identifiers — not secrets; safe in env vars.
+              ENTRA_TENANT_ID: ${{ parameters.entraTenantId }}
+              ENTRA_FRONTEND_CLIENT_ID: ${{ parameters.entraFrontendClientId }}
+              ENTRA_API_CLIENT_ID: ${{ parameters.entraApiClientId }}
+              ENTRA_API_SCOPE: ${{ parameters.entraApiScope }}
             inputs:
               azureSubscription: $(azureServiceConnection)
               scriptType: pscore
@@ -55,10 +82,12 @@ stages:
                 Write-Host "Working directory: $PWD"
                 Write-Host "az version:"
                 az version --output table
+                $authSwitch = if ('${{ parameters.enableEntraAuth }}' -eq 'true') { @('-EnableEntraAuth') } else { @() }
                 ./deploy.ps1 `
                   -ResourceGroup "${{ parameters.resourceGroup }}" `
                   -Location "${{ parameters.location }}" `
-                  -AppSecret $env:APP_SECRET
+                  -AppSecret $env:APP_SECRET `
+                  @authSwitch
 
           - task: AzureCLI@2
             displayName: Smoke test endpoints
@@ -75,6 +104,8 @@ stages:
 
                 Write-Host "API:      $api"
                 Write-Host "Frontend: $fe"
+
+                $entraEnabled = '${{ parameters.enableEntraAuth }}' -eq 'true'
 
                 # Flex Consumption can take 60-180s after deploy for new
                 # functions (especially ones with npm deps) to register on the
@@ -102,19 +133,48 @@ stages:
                     throw "$Name never succeeded within timeout"
                 }
 
-                Write-Host "`n--- GET /api/profile ---"
-                $profile = Invoke-WithRetry -Name "profile" -Call {
-                    Invoke-RestMethod -Uri "$api/api/profile" -Method Get -TimeoutSec 20
+                function Assert-Returns401 {
+                    param([string]$Name, [string]$Uri)
+                    $deadline = (Get-Date).AddMinutes(5)
+                    $attempt  = 0
+                    while ((Get-Date) -lt $deadline) {
+                        $attempt++
+                        try {
+                            Invoke-RestMethod -Uri $Uri -Method Get -TimeoutSec 20 | Out-Null
+                            Write-Host "  $Name returned 200 on attempt $attempt — auth not yet active, retrying..." -ForegroundColor DarkYellow
+                        } catch {
+                            $code = $_.Exception.Response.StatusCode.value__
+                            if ($code -eq 401) {
+                                Write-Host "  $Name → 401 (Entra auth is active) on attempt $attempt" -ForegroundColor Green
+                                return
+                            }
+                            Write-Host "  $Name returned HTTP $code on attempt $attempt, retrying in 15s..." -ForegroundColor DarkYellow
+                        }
+                        Start-Sleep 15
+                    }
+                    throw "$Name did not return 401 within timeout"
                 }
-                $profile | ConvertTo-Json -Depth 4
 
-                Write-Host "`n--- POST /api/visitors ---"
-                $visit = Invoke-WithRetry -Name "visitors" -Call {
-                    Invoke-RestMethod -Uri "$api/api/visitors" -Method Post -ContentType "application/json" -TimeoutSec 20
+                if ($entraEnabled) {
+                    Write-Host "`n--- Entra auth enabled: verifying 401 on unauthenticated requests ---"
+                    Assert-Returns401 -Name "/api/profile" -Uri "$api/api/profile"
+                    Assert-Returns401 -Name "/api/visitors" -Uri "$api/api/visitors"
+                    Write-Host "`nEntra auth smoke tests passed (endpoints return 401 as expected)." -ForegroundColor Green
+                } else {
+                    Write-Host "`n--- GET /api/profile ---"
+                    $profile = Invoke-WithRetry -Name "profile" -Call {
+                        Invoke-RestMethod -Uri "$api/api/profile" -Method Get -TimeoutSec 20
+                    }
+                    $profile | ConvertTo-Json -Depth 4
+
+                    Write-Host "`n--- POST /api/visitors ---"
+                    $visit = Invoke-WithRetry -Name "visitors" -Call {
+                        Invoke-RestMethod -Uri "$api/api/visitors" -Method Post -ContentType "application/json" -TimeoutSec 20
+                    }
+                    $visit | ConvertTo-Json
+
+                    Write-Host "`nAll smoke tests passed." -ForegroundColor Green
                 }
-                $visit | ConvertTo-Json
-
-                Write-Host "`nAll smoke tests passed." -ForegroundColor Green
 
   - stage: Cleanup
     displayName: Cleanup on failure (delete RG contents)

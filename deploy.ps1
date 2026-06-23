@@ -5,7 +5,12 @@
 param(
     [string]$ResourceGroup = "rg-portfolio-dev",
     [string]$Location = "centralindia",
-    [string]$AppSecret = $env:APP_SECRET
+    [string]$AppSecret = $env:APP_SECRET,
+    [switch]$EnableEntraAuth,
+    [string]$EntraTenantId = $env:ENTRA_TENANT_ID,
+    [string]$EntraFrontendClientId = $env:ENTRA_FRONTEND_CLIENT_ID,
+    [string]$EntraApiClientId = $env:ENTRA_API_CLIENT_ID,
+    [string]$EntraApiScope = $env:ENTRA_API_SCOPE
 )
 
 Write-Host "=== Student Portfolio Platform - Deploy (Flex Consumption) ===" -ForegroundColor Cyan
@@ -18,6 +23,21 @@ if (-not $AppSecret) {
     )
 }
 $plainSecret = $AppSecret
+
+if ($EnableEntraAuth) {
+    $missing = @()
+    if (-not $EntraTenantId) { $missing += 'EntraTenantId' }
+    if (-not $EntraFrontendClientId) { $missing += 'EntraFrontendClientId' }
+    if (-not $EntraApiClientId) { $missing += 'EntraApiClientId' }
+    if ($missing.Count -gt 0) {
+        Write-Host "Missing required Entra auth parameter(s): $($missing -join ', ')" -ForegroundColor Red
+        Write-Host "Create the Entra app registrations first, then rerun deploy.ps1 with those values." -ForegroundColor Yellow
+        exit 1
+    }
+    if (-not $EntraApiScope) {
+        $EntraApiScope = "api://$EntraApiClientId/access_as_user"
+    }
+}
 
 # Resolve `az` per-platform: Windows CLI installer puts it at a fixed path,
 # Linux/Mac (and pipeline agents) just have `az` on PATH.
@@ -77,8 +97,11 @@ $paramsFile = Join-Path $env:TEMP "portfolio-params-$(Get-Random).json"
     '$schema'      = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
     contentVersion = '1.0.0.0'
     parameters     = @{
-        projectName = @{ value = 'portfolio' }
-        appSecret   = @{ value = $plainSecret }
+        projectName       = @{ value = 'portfolio' }
+        appSecret         = @{ value = $plainSecret }
+        enableEntraAuth   = @{ value = [bool]$EnableEntraAuth }
+        entraTenantId     = @{ value = $EntraTenantId }
+        entraApiClientId  = @{ value = $EntraApiClientId }
     }
 } | ConvertTo-Json -Depth 5 | Set-Content -Path $paramsFile -Encoding utf8
 
@@ -100,6 +123,7 @@ $funcUrl        = $result.functionAppUrl.value
 $funcName       = $result.functionAppName.value
 $frontendUrl    = $result.frontendUrl.value
 $storageAccount = $result.storageAccountName.value
+$entraAuthEnabled = [bool]$result.entraAuthEnabled.value
 
 Write-Host "[3/6] Bicep deployment successful!" -ForegroundColor Green
 Write-Host ""
@@ -109,6 +133,7 @@ Write-Host "Frontend URL:     $frontendUrl"
 Write-Host "Key Vault URI:    $($result.keyVaultUri.value)"
 Write-Host "Logic App:        $($result.logicAppEndpoint.value)"
 Write-Host "Storage Account:  $storageAccount"
+Write-Host "Entra Auth:       $entraAuthEnabled"
 Write-Host ""
 
 # ─── 4. Deploy function code (Flex one-deploy) ───────────────
@@ -216,9 +241,16 @@ if (Test-Path $frontendSrc) {
     if (Test-Path $frontendTemp) { Remove-Item $frontendTemp -Recurse -Force }
     New-Item -ItemType Directory -Path $frontendTemp | Out-Null
     Copy-Item -Path (Join-Path $frontendSrc '*') -Destination $frontendTemp -Recurse -Force
+    $authEnabledText = if ($EnableEntraAuth) { 'true' } else { 'false' }
     @"
 window.PORTFOLIO_CONFIG = {
-  apiBaseUrl: '$funcUrl'
+    apiBaseUrl: '$funcUrl',
+    auth: {
+        enabled: $authEnabledText,
+        tenantId: '$EntraTenantId',
+        clientId: '$EntraFrontendClientId',
+        apiScope: '$EntraApiScope'
+    }
 };
 "@ | Set-Content -Path (Join-Path $frontendTemp 'config.js') -Encoding ascii
 
@@ -260,8 +292,12 @@ if (Test-Path $seedScript) {
 Write-Host ""
 Write-Host "=== Test Your App ===" -ForegroundColor Cyan
 Write-Host "  Open $frontendUrl"
-Write-Host "  curl $funcUrl/api/profile"
-Write-Host "  curl -X POST $funcUrl/api/contact -H 'Content-Type: application/json' -d '{""name"":""Test"",""email"":""test@test.com"",""message"":""Hello""}'"
+if ($EnableEntraAuth) {
+    Write-Host "  API auth is enabled. Use the frontend sign-in flow, or call the API with a Bearer token for scope: $EntraApiScope"
+} else {
+    Write-Host "  curl $funcUrl/api/profile"
+    Write-Host "  curl -X POST $funcUrl/api/contact -H 'Content-Type: application/json' -d '{""name"":""Test"",""email"":""test@test.com"",""message"":""Hello""}'"
+}
 Write-Host ""
 Write-Host "Smoke test: .\scripts\smoke-test.ps1" -ForegroundColor Cyan
 Write-Host "To destroy: .\destroy.ps1" -ForegroundColor Yellow
