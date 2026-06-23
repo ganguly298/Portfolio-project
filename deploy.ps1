@@ -14,6 +14,7 @@ param(
 )
 
 Write-Host "=== Student Portfolio Platform - Deploy (Flex Consumption) ===" -ForegroundColor Cyan
+Write-Host "EnableEntraAuth switch present: $([bool]$EnableEntraAuth.IsPresent)" -ForegroundColor DarkGray
 Write-Host ""
 
 if (-not $AppSecret) {
