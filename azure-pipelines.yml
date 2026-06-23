@@ -82,7 +82,13 @@ stages:
                 Write-Host "Working directory: $PWD"
                 Write-Host "az version:"
                 az version --output table
-                $authSwitch = if ('${{ parameters.enableEntraAuth }}' -eq 'true') { @('-EnableEntraAuth') } else { @() }
+                # Robust boolean parse: ADO may substitute 'True'/'False' or 'true'/'false'.
+                # Treat anything that .NET parses as boolean true as enabled.
+                $rawAuth = '${{ parameters.enableEntraAuth }}'.Trim()
+                $authOn = $false
+                [void][bool]::TryParse($rawAuth, [ref]$authOn)
+                Write-Host "enableEntraAuth raw='$rawAuth' parsed=$authOn"
+                $authSwitch = if ($authOn) { @('-EnableEntraAuth') } else { @() }
                 ./deploy.ps1 `
                   -ResourceGroup "${{ parameters.resourceGroup }}" `
                   -Location "${{ parameters.location }}" `
