@@ -286,7 +286,9 @@ function renderCredentials(outputs) {
         vmCredIp.textContent = 'none (use Azure Bastion)';
     }
     if (outputs.kvSecretReference) {
-        vmCredKv.innerHTML = `<a href="${escapeHtml(outputs.kvSecretReference)}" target="_blank" rel="noopener">open in portal ↗</a>`;
+        const tenant = authConfig.tenantId || 'common';
+        const portalUrl = `https://portal.azure.com/#@${encodeURIComponent(tenant)}/asset/Microsoft_KeyVault/Secret/${outputs.kvSecretReference}`;
+        vmCredKv.innerHTML = `<a href="${escapeHtml(portalUrl)}" target="_blank" rel="noopener">open in portal ↗</a>`;
     } else {
         vmCredKv.textContent = '—';
     }
