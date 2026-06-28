@@ -36,11 +36,27 @@ module.exports = async function (context, req) {
 
         if (state === 'Succeeded') {
             const outputs = (result.properties && result.properties.outputs) || {};
+            const kvSecretRef = outputs.kvSecretReference && outputs.kvSecretReference.value;
+            let kvSecretPortalUrl = '';
+            if (kvSecretRef) {
+                // kvSecretRef looks like https://<vault>.vault.azure.net/secrets/<name>
+                const m = kvSecretRef.match(/^https:\/\/([^.]+)\.vault\.azure\.net\/secrets\/([^/?]+)/i);
+                const tenantId = process.env.TENANT_ID || '';
+                const kvRg = process.env.KV_RESOURCE_GROUP || rgName;
+                if (m) {
+                    const vaultName = m[1];
+                    const secretName = m[2];
+                    const armId = `/subscriptions/${subscriptionId}/resourceGroups/${kvRg}/providers/Microsoft.KeyVault/vaults/${vaultName}/secrets/${secretName}`;
+                    const tenantSeg = tenantId ? `@${tenantId}` : '';
+                    kvSecretPortalUrl = `https://portal.azure.com/#${tenantSeg}/resource${armId}`;
+                }
+            }
             body.outputs = {
                 vmName: outputs.vmName && outputs.vmName.value,
                 adminUsername: outputs.adminUsername && outputs.adminUsername.value,
                 publicIp: (outputs.publicIp && outputs.publicIp.value) || '',
-                kvSecretReference: outputs.kvSecretReference && outputs.kvSecretReference.value
+                kvSecretReference: kvSecretRef,
+                kvSecretPortalUrl
             };
         } else if (state === 'Failed') {
             body.error = (result.properties && result.properties.error) || 'Deployment failed';

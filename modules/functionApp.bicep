@@ -125,6 +125,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: subscription().subscriptionId
         }
         {
+          name: 'TENANT_ID'
+          value: subscription().tenantId
+        }
+        {
           name: 'KV_NAME'
           value: keyVaultName
         }
