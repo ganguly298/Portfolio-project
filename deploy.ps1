@@ -137,6 +137,39 @@ Write-Host "Storage Account:  $storageAccount"
 Write-Host "Entra Auth:       $entraAuthEnabled"
 Write-Host ""
 
+# ─── 3a. Grant Function App MI subscription-scope Contributor ─
+# Needed for the CreateVm function to deploy VMs into per-user RGs.
+# Bicep can't assign at subscription scope from an RG-scoped deployment,
+# and a Function App recreate rotates the MI principalId, so do it here.
+Write-Host "[3a/6] Granting subscription-scope Contributor to Function App MI..." -ForegroundColor Yellow
+$miPrincipalId = & $az functionapp identity show -g $ResourceGroup -n $funcName --query principalId -o tsv
+$subId = & $az account show --query id -o tsv
+if ($miPrincipalId -and $subId) {
+    $existing = & $az role assignment list `
+        --assignee-object-id $miPrincipalId `
+        --assignee-principal-type ServicePrincipal `
+        --role Contributor `
+        --scope "/subscriptions/$subId" `
+        --query "[0].id" -o tsv 2>$null
+    if ($existing) {
+        Write-Host "  Contributor already assigned ($existing)." -ForegroundColor DarkGray
+    } else {
+        & $az role assignment create `
+            --assignee-object-id $miPrincipalId `
+            --assignee-principal-type ServicePrincipal `
+            --role Contributor `
+            --scope "/subscriptions/$subId" `
+            --output none
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Contributor granted to MI $miPrincipalId at subscription scope." -ForegroundColor Green
+        } else {
+            Write-Host "  Failed to grant Contributor. CreateVm will return 403 until this is fixed." -ForegroundColor Red
+        }
+    }
+} else {
+    Write-Host "  Could not resolve MI principalId or subscription ID; skipping." -ForegroundColor Red
+}
+
 # ─── 4. Deploy function code (Flex one-deploy) ───────────────
 Write-Host "[4/6] Packaging and deploying function code..." -ForegroundColor Yellow
 $apiSrc = Join-Path $PSScriptRoot 'src\api'
@@ -217,8 +250,8 @@ if (Test-Path $frontendSrc) {
             --account-name $storageAccount `
             --account-key $storageKey `
             --static-website `
-            --index-document index.html `
-            --404-document index.html `
+            --index-document bento.html `
+            --404-document bento.html `
             --output none 2>$null
         Start-Sleep 5
         $enabled = & $az storage blob service-properties show --account-name $storageAccount --account-key $storageKey --query "staticWebsite.enabled" -o tsv 2>$null

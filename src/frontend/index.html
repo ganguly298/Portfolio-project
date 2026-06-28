@@ -3,66 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saurav Ganguly | Cloud Portfolio</title>
+    <title>Research Environments | Saurav Ganguly</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Serif+4:wght@400;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=5">
 </head>
-<body>
-    <div class="shell">
-        <header class="hero">
-            <p class="eyebrow">Azure Serverless Portfolio</p>
-            <h1 id="profile-name">Loading profile...</h1>
-            <p id="profile-title" class="hero-title"></p>
-            <p id="profile-about" class="hero-about"></p>
-            <div class="hero-links">
-                <a id="github-link" class="button ghost" href="#" target="_blank" rel="noreferrer">GitHub</a>
-                <a id="linkedin-link" class="button ghost" href="#" target="_blank" rel="noreferrer">LinkedIn</a>
-            </div>
+<body class="re">
+    <div class="wordmark" aria-label="Research Environments">
+        <span class="wordmark-dot"></span>
+        <span class="wordmark-text">Research Environments</span>
+    </div>
+
+    <a class="back-link" href="bento.html">&larr; Back to portfolio</a>
+
+    <main class="re-shell">
+        <section class="re-hero">
+            <p class="eyebrow">A live, hands-on demo</p>
+            <h1 class="re-title">Welcome to<br>Research&nbsp;Environments.</h1>
+            <p class="re-lede">
+                Sign in with Microsoft Entra ID and spin up your own
+                disposable Windows&nbsp;11 workstation in Azure &mdash;
+                ready for any quick research, lab work, or experiment.
+                Auto-deletes after two hours so nothing lingers on the bill.
+            </p>
+
+            <ul class="re-meta">
+                <li><span>Regions</span> 5 across APAC, MEA &amp; EU</li>
+                <li><span>Image</span> Windows&nbsp;11 25H2 Pro</li>
+                <li><span>Size</span> Standard_B2s_v2</li>
+                <li><span>TTL</span> 2&nbsp;hours</li>
+            </ul>
+
             <div id="auth-bar" class="auth-bar" hidden>
                 <span id="auth-status" class="auth-status">Not signed in</span>
-                <button id="login-button" class="button solid" type="button">Sign in</button>
+                <button id="login-button" class="button solid" type="button">Sign in to launch</button>
                 <button id="logout-button" class="button ghost" type="button" hidden>Sign out</button>
             </div>
             <p id="visitor-count" class="visitor-count">Visitors: ...</p>
-        </header>
+        </section>
 
-        <main class="grid">
-            <section class="panel">
-                <div class="panel-head">
-                    <p class="eyebrow">Backend read test</p>
-                    <h2>Skills from API</h2>
-                </div>
-                <div id="status-pill" class="status-pill">Waiting for API</div>
-                <ul id="skills-list" class="skills-list"></ul>
-                <pre id="profile-json" class="json-box"></pre>
-            </section>
+        <section class="vm-feature" id="vm-feature" aria-labelledby="vm-feature-title">
+            <div class="vm-feature-head">
+                <p class="eyebrow accent-on-dark">// launch</p>
+                <h2 id="vm-feature-title">Provision a new environment</h2>
+                <p class="vm-feature-sub">Pick a name, pick a region, hit launch.</p>
+            </div>
 
-            <section class="panel accent">
-                <div class="panel-head">
-                    <p class="eyebrow">Backend write test</p>
-                    <h2>Contact form</h2>
+            <form id="vm-form" class="vm-form">
+                <div class="vm-name-field">
+                    <label for="vm-name-input" class="vm-name-label">Environment name</label>
+                    <div class="vm-name-row">
+                        <span class="vm-name-prefix">vm&nbsp;/</span>
+                        <input
+                            id="vm-name-input"
+                            name="vmName"
+                            type="text"
+                            class="vm-name-input"
+                            placeholder="my-lab"
+                            pattern="[a-zA-Z0-9]{2,12}"
+                            maxlength="12"
+                            autocomplete="off"
+                            spellcheck="false"
+                            required>
+                    </div>
+                    <p class="vm-name-hint">2&ndash;12 letters or digits. Becomes the VM hostname.</p>
                 </div>
-                <form id="contact-form" class="contact-form">
-                    <label>
-                        Name
-                        <input type="text" name="name" required>
+
+                <div class="vm-secondary-row">
+                    <label class="vm-region">
+                        <span>Region</span>
+                        <select name="region" required>
+                            <option value="centralindia">Central India</option>
+                            <option value="southeastasia">Southeast Asia (Singapore)</option>
+                            <option value="malaysiawest">Malaysia West</option>
+                            <option value="uaenorth">UAE North (Dubai)</option>
+                            <option value="austriaeast">Austria East (Vienna)</option>
+                        </select>
                     </label>
-                    <label>
-                        Email
-                        <input type="email" name="email" required>
-                    </label>
-                    <label>
-                        Message
-                        <textarea name="message" rows="5" required></textarea>
-                    </label>
-                    <button type="submit" class="button solid">Send message</button>
-                </form>
-                <p id="form-status" class="form-status">Submit the form to test POST /api/contact.</p>
-            </section>
-        </main>
-    </div>
+                    <button type="submit" class="button solid vm-launch">Launch &rarr;</button>
+                </div>
+
+                <div class="vm-password-field">
+                    <label for="vm-password-input" class="vm-name-label">Admin password</label>
+                    <input
+                        id="vm-password-input"
+                        name="adminPassword"
+                        type="password"
+                        class="vm-password-input"
+                        placeholder="12+ chars, mix of upper / lower / digit / symbol"
+                        minlength="12"
+                        maxlength="72"
+                        autocomplete="new-password"
+                        spellcheck="false"
+                        required>
+                    <p class="vm-name-hint">
+                        You set this. It will be saved as <code>pass-vm-&lt;name&gt;</code> in Key Vault so you can fetch it later.
+                    </p>
+                </div>
+
+                <label class="vm-toggle">
+                    <input id="vm-public-ip" type="checkbox" name="createPublicIp">
+                    <span class="vm-toggle-box"></span>
+                    <span class="vm-toggle-text">
+                        <strong>Assign a public IP</strong>
+                        <em>Opens RDP (port 3389) to the Internet via an NSG. Leave off to connect through Azure Bastion only.</em>
+                    </span>
+                </label>
+            </form>
+
+            <p id="vm-status" class="vm-status"></p>
+            <div id="vm-credentials" class="vm-credentials" hidden>
+                <p class="eyebrow accent-on-dark">// ready</p>
+                <h3>Your environment is up</h3>
+                <dl class="vm-creds-grid">
+                    <dt>VM name</dt><dd id="vm-cred-name">&mdash;</dd>
+                    <dt>Username</dt><dd id="vm-cred-user">&mdash;</dd>
+                    <dt>Public IP</dt><dd id="vm-cred-ip">&mdash;</dd>
+                    <dt>Key Vault secret</dt><dd id="vm-cred-kv">&mdash;</dd>
+                </dl>
+                <p class="vm-creds-hint" id="vm-cred-hint"></p>
+            </div>
+            <pre id="vm-result" class="json-box" hidden></pre>
+        </section>
+
+        <section class="my-vms" id="my-vms-section" aria-labelledby="my-vms-title" hidden>
+            <div class="my-vms-head">
+                <p class="eyebrow accent-on-dark">// your environments</p>
+                <h2 id="my-vms-title">Active environments</h2>
+                <button id="my-vms-refresh" class="button ghost my-vms-refresh" type="button">Refresh</button>
+            </div>
+            <ul id="my-vms-list" class="my-vms-list"></ul>
+            <p id="my-vms-empty" class="my-vms-empty" hidden>No environments yet. Launch one above.</p>
+        </section>
+
+        <section class="contact-section" aria-labelledby="contact-title">
+            <div class="panel-head">
+                <p class="eyebrow">Get in touch</p>
+                <h2 id="contact-title">Contact me</h2>
+            </div>
+            <form id="contact-form" class="contact-form">
+                <label>
+                    Name
+                    <input type="text" name="name" required>
+                </label>
+                <label>
+                    Email
+                    <input type="email" name="email" required>
+                </label>
+                <label>
+                    Message
+                    <textarea name="message" rows="4" required></textarea>
+                </label>
+                <button type="submit" class="button ghost">Send message</button>
+            </form>
+            <p id="form-status" class="form-status">Sign in to enable the form.</p>
+        </section>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
     <script src="config.js"></script>

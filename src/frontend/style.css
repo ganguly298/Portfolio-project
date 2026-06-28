@@ -255,3 +255,599 @@ h2 {
         font-size: 18px;
     }
 }
+
+/* ============================================================
+   Research Environments page (index.html, body.re)
+   ============================================================ */
+
+body.re {
+    background:
+        radial-gradient(1100px 600px at 85% -10%, rgba(11, 110, 79, 0.18), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, rgba(255, 180, 90, 0.18), transparent 60%),
+        linear-gradient(180deg, #0f1116 0%, #161922 100%);
+    color: #ecedf2;
+}
+
+body.re .wordmark {
+    position: fixed;
+    top: 22px;
+    left: 26px;
+    z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    font-family: 'JetBrains Mono', 'Space Grotesk', monospace;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: #ecedf2;
+}
+
+body.re .wordmark-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.7);
+}
+
+body.re .back-link {
+    position: fixed;
+    top: 26px;
+    right: 26px;
+    z-index: 50;
+    color: rgba(236, 237, 242, 0.7);
+    text-decoration: none;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    transition: color 0.2s, border-color 0.2s;
+}
+body.re .back-link:hover {
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.re-shell {
+    width: min(960px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 120px 0 80px;
+    display: grid;
+    gap: 40px;
+}
+
+.re-hero .eyebrow {
+    color: #4ade80;
+}
+
+.re-title {
+    margin: 14px 0 0;
+    font-size: clamp(48px, 8vw, 96px);
+    line-height: 0.92;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+
+.re-lede {
+    margin: 26px 0 0;
+    max-width: 640px;
+    font-family: 'Source Serif 4', serif;
+    font-size: 19px;
+    line-height: 1.6;
+    color: rgba(236, 237, 242, 0.78);
+}
+
+.re-meta {
+    list-style: none;
+    padding: 0;
+    margin: 32px 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    overflow: hidden;
+}
+.re-meta li {
+    background: #14171f;
+    padding: 14px 16px;
+    font-size: 14px;
+    color: #ecedf2;
+}
+.re-meta li span {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(236, 237, 242, 0.45);
+    margin-bottom: 4px;
+}
+
+body.re .auth-bar {
+    margin-top: 28px;
+}
+body.re .auth-status {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(236, 237, 242, 0.75);
+}
+body.re .visitor-count {
+    margin-top: 22px;
+    color: rgba(236, 237, 242, 0.45);
+}
+body.re .button.solid {
+    background: #4ade80;
+    color: #0f1116;
+}
+body.re .button.solid:hover:not(:disabled) {
+    background: #6ee79b;
+}
+body.re .button.ghost {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.14);
+    color: #ecedf2;
+}
+
+/* ---- VM feature card ---- */
+
+.vm-feature {
+    position: relative;
+    padding: 38px 36px 32px;
+    border-radius: 24px;
+    background:
+        radial-gradient(600px 200px at 100% 0%, rgba(74, 222, 128, 0.12), transparent 70%),
+        linear-gradient(180deg, #1a1e29 0%, #141823 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.vm-feature-head .eyebrow.accent-on-dark {
+    color: #4ade80;
+    font-family: 'JetBrains Mono', monospace;
+}
+.vm-feature-head h2 {
+    margin: 8px 0 6px;
+    font-size: clamp(26px, 3.4vw, 36px);
+    letter-spacing: -0.01em;
+    color: #fff;
+}
+.vm-feature-sub {
+    margin: 0 0 28px;
+    color: rgba(236, 237, 242, 0.6);
+    font-size: 15px;
+}
+
+.vm-form {
+    display: grid;
+    gap: 22px;
+}
+
+.vm-name-field {
+    display: grid;
+    gap: 10px;
+}
+.vm-name-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(236, 237, 242, 0.5);
+}
+.vm-name-row {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    transition: border-color 0.2s, background 0.2s;
+}
+.vm-name-row:focus-within {
+    border-color: #4ade80;
+    background: rgba(74, 222, 128, 0.05);
+}
+.vm-name-prefix {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    color: rgba(74, 222, 128, 0.85);
+    background: rgba(74, 222, 128, 0.06);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    letter-spacing: 0.02em;
+}
+.vm-name-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(24px, 3vw, 34px);
+    padding: 18px 20px;
+    letter-spacing: -0.01em;
+    outline: none;
+    min-width: 0;
+}
+.vm-name-input::placeholder {
+    color: rgba(236, 237, 242, 0.25);
+}
+.vm-name-hint {
+    margin: 0;
+    font-size: 12px;
+    color: rgba(236, 237, 242, 0.4);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.vm-secondary-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: end;
+}
+.vm-region {
+    display: grid;
+    gap: 8px;
+    font-size: 14px;
+    color: rgba(236, 237, 242, 0.6);
+}
+.vm-region span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(236, 237, 242, 0.5);
+}
+.vm-region select {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    font: inherit;
+    outline: none;
+}
+.vm-region select:focus {
+    border-color: #4ade80;
+}
+.vm-launch {
+    min-height: 52px;
+    padding: 0 26px;
+    font-size: 15px;
+}
+
+.vm-status {
+    margin: 22px 0 0;
+    min-height: 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: rgba(236, 237, 242, 0.65);
+}
+.vm-status.error {
+    color: #fca5a5;
+}
+
+body.re .json-box {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #d5e1f3;
+}
+
+/* ---- My VMs panel ---- */
+
+.my-vms {
+    padding: 28px 32px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.my-vms-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.my-vms-head .eyebrow { flex-basis: 100%; }
+.my-vms-head h2 {
+    margin: 4px 0 0;
+    font-size: 22px;
+    color: #fff;
+    flex: 1;
+}
+.my-vms-refresh {
+    min-height: 38px;
+    padding: 0 16px;
+    font-size: 13px;
+}
+.my-vms-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+.my-vms-list .vm-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.3);
+}
+.my-vms-list .vm-row .vm-row-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    color: #fff;
+    overflow-wrap: anywhere;
+}
+.my-vms-list .vm-row .vm-row-ip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #4ade80;
+    overflow-wrap: anywhere;
+}
+.my-vms-list .vm-row .vm-row-ip code {
+    font: inherit;
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+    padding: 4px 10px;
+    border-radius: 8px;
+}
+.my-vms-list .vm-row .vm-row-ip-none {
+    color: rgba(236, 237, 242, 0.4);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+.my-vms-list .vm-row .vm-row-loc {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: rgba(236, 237, 242, 0.5);
+    letter-spacing: 0.04em;
+}
+.vm-row-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(236, 237, 242, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.vm-row-state::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+}
+.vm-row-state.running {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.08);
+    border-color: rgba(74, 222, 128, 0.3);
+}
+.vm-row-state.stopped,
+.vm-row-state.deallocated {
+    color: #fca5a5;
+    background: rgba(252, 165, 165, 0.06);
+    border-color: rgba(252, 165, 165, 0.25);
+}
+.vm-row-state.starting,
+.vm-row-state.stopping,
+.vm-row-state.deallocating,
+.vm-row-state.creating {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.06);
+    border-color: rgba(251, 191, 36, 0.25);
+}
+.my-vms-empty {
+    margin: 0;
+    padding: 18px;
+    text-align: center;
+    color: rgba(236, 237, 242, 0.45);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+}
+
+/* ---- Contact section ---- */
+
+.contact-section {
+    padding: 32px 32px 28px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.contact-section .eyebrow {
+    color: rgba(236, 237, 242, 0.55);
+}
+.contact-section h2 {
+    color: #fff;
+    font-size: 22px;
+    margin-top: 6px;
+}
+body.re .contact-form input,
+body.re .contact-form textarea {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+body.re .contact-form label {
+    color: rgba(236, 237, 242, 0.55);
+}
+body.re .form-status {
+    color: rgba(236, 237, 242, 0.55);
+}
+body.re .form-status.error {
+    background: transparent;
+    color: #fca5a5;
+}
+
+/* ---------- VM password + public IP toggle + credentials ---------- */
+
+.vm-password-field {
+    display: grid;
+    gap: 10px;
+}
+.vm-password-input {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    padding: 16px 18px;
+    letter-spacing: 0.08em;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+.vm-password-input::placeholder {
+    color: rgba(236, 237, 242, 0.3);
+    letter-spacing: 0;
+    font-family: 'Space Grotesk', sans-serif;
+}
+.vm-password-input:focus {
+    border-color: #4ade80;
+    background: rgba(74, 222, 128, 0.04);
+}
+
+.vm-toggle {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 16px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+}
+.vm-toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    position: absolute;
+}
+.vm-toggle-box {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    position: relative;
+    transition: background 0.2s, border-color 0.2s;
+}
+.vm-toggle input:checked + .vm-toggle-box {
+    background: #4ade80;
+    border-color: #4ade80;
+}
+.vm-toggle input:checked + .vm-toggle-box::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 6px;
+    height: 11px;
+    border-right: 2px solid #0b0d12;
+    border-bottom: 2px solid #0b0d12;
+    transform: rotate(45deg);
+}
+.vm-toggle-text {
+    display: grid;
+    gap: 4px;
+    font-size: 14px;
+    color: rgba(236, 237, 242, 0.85);
+}
+.vm-toggle-text strong {
+    font-weight: 600;
+}
+.vm-toggle-text em {
+    font-style: normal;
+    font-size: 12px;
+    color: rgba(236, 237, 242, 0.55);
+    line-height: 1.5;
+}
+
+.vm-credentials {
+    margin: 22px 0 0;
+    padding: 22px 24px;
+    border: 1px solid rgba(74, 222, 128, 0.35);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(74, 222, 128, 0.08), rgba(74, 222, 128, 0.02));
+}
+.vm-credentials h3 {
+    margin: 4px 0 16px;
+    font-size: 22px;
+    color: #fff;
+}
+.vm-creds-grid {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px 18px;
+    font-size: 14px;
+}
+.vm-creds-grid dt {
+    color: rgba(236, 237, 242, 0.5);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    align-self: center;
+}
+.vm-creds-grid dd {
+    margin: 0;
+    color: #fff;
+    font-size: 15px;
+}
+.vm-creds-grid code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    color: #4ade80;
+}
+.vm-creds-grid a {
+    color: #4ade80;
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(74, 222, 128, 0.5);
+}
+.vm-creds-hint {
+    margin: 16px 0 0;
+    font-size: 13px;
+    color: rgba(236, 237, 242, 0.65);
+    line-height: 1.55;
+}
+
+@media (max-width: 640px) {
+    body.re .back-link { display: none; }
+    .re-shell { padding-top: 100px; }
+    .vm-feature { padding: 28px 22px 24px; }
+    .vm-secondary-row { grid-template-columns: 1fr; }
+    .vm-launch { width: 100%; }
+    .vm-creds-grid { grid-template-columns: 1fr; gap: 4px 0; }
+    .vm-creds-grid dt { margin-top: 10px; }
+}

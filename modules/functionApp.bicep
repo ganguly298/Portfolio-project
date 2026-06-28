@@ -120,6 +120,18 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'LOGIC_APP_CALLBACK_URL'
           value: logicAppCallbackUrl
         }
+        {
+          name: 'SUBSCRIPTION_ID'
+          value: subscription().subscriptionId
+        }
+        {
+          name: 'KV_NAME'
+          value: keyVaultName
+        }
+        {
+          name: 'KV_RESOURCE_GROUP'
+          value: resourceGroup().name
+        }
       ]
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
