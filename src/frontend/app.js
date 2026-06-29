@@ -22,22 +22,27 @@ const vmCredName = document.getElementById('vm-cred-name');
 const vmCredUser = document.getElementById('vm-cred-user');
 const vmCredIp = document.getElementById('vm-cred-ip');
 const vmCredKv = document.getElementById('vm-cred-kv');
+const vmCredPass = document.getElementById('vm-cred-pass');
 const vmCredHint = document.getElementById('vm-cred-hint');
 
 const myVmsSection = document.getElementById('my-vms-section');
 const myVmsList = document.getElementById('my-vms-list');
 const myVmsEmpty = document.getElementById('my-vms-empty');
 const myVmsRefresh = document.getElementById('my-vms-refresh');
+const myVmsDelete = document.getElementById('my-vms-delete');
 
 let msalClient = null;
 let activeAccount = null;
 let myVmsTimer = null;
+let currentRgName = '';
+let currentDeploymentId = '';
 
 initializeApp();
 
 loginButton?.addEventListener('click', signIn);
 logoutButton?.addEventListener('click', signOut);
 myVmsRefresh?.addEventListener('click', () => refreshMyVms());
+myVmsDelete?.addEventListener('click', () => deleteMyEnvironment());
 
 async function initializeApp() {
     if (!apiBaseUrl) {
@@ -258,6 +263,8 @@ async function pollVmStatus(deploymentId, rgName, wantPublicIp) {
                     ? `RDP to ${data.outputs.publicIp} on port 3389`
                     : 'Azure Bastion (no public IP)';
                 setVmStatus(`Done in ${elapsed}s. Connect via ${connectVia}.`, false);
+                currentRgName = rgName;
+                currentDeploymentId = deploymentId;
                 renderCredentials(data.outputs || {});
                 refreshMyVms();
                 return;
@@ -285,16 +292,73 @@ function renderCredentials(outputs) {
     } else {
         vmCredIp.textContent = 'none (use Azure Bastion)';
     }
+    if (vmCredPass) {
+        vmCredPass.innerHTML = `<button type="button" id="vm-cred-reveal" class="button ghost reveal-btn">Reveal password</button>`;
+        document.getElementById('vm-cred-reveal')?.addEventListener('click', revealPassword);
+    }
     if (outputs.kvSecretPortalUrl) {
-        vmCredKv.innerHTML = `<a href="${escapeHtml(outputs.kvSecretPortalUrl)}" target="_blank" rel="noopener">open in portal ↗</a>`;
+        vmCredKv.innerHTML = `<a href="${escapeHtml(outputs.kvSecretPortalUrl)}" target="_blank" rel="noopener" class="kv-link">view in portal ↗</a>`;
     } else if (outputs.kvSecretReference) {
         vmCredKv.innerHTML = `<code>${escapeHtml(outputs.kvSecretReference)}</code>`;
     } else {
         vmCredKv.textContent = '—';
     }
     vmCredHint.textContent = outputs.publicIp
-        ? 'RDP from your machine using the username and the password you set. The password is also saved in Key Vault.'
-        : 'Open the VM in the Azure Portal and click Connect → Bastion. Use the username and the password you set (also stored in Key Vault).';
+        ? 'RDP from your machine using the username and the revealed password. Auto-deletes in 2 hours.'
+        : 'Open the VM in the Azure Portal and click Connect → Bastion. Use the username and the revealed password. Auto-deletes in 2 hours.';
+}
+
+async function revealPassword() {
+    if (!currentDeploymentId || !currentRgName) {
+        alert('No active deployment to reveal.');
+        return;
+    }
+    const btn = document.getElementById('vm-cred-reveal');
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+    try {
+        const r = await apiFetch(`/api/vm/${encodeURIComponent(currentDeploymentId)}/credential?rg=${encodeURIComponent(currentRgName)}`);
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        const pw = data.password || '';
+        vmCredPass.innerHTML = `
+            <code class="pw-value">${escapeHtml(pw)}</code>
+            <button type="button" class="button ghost pw-copy">Copy</button>
+            <span class="pw-timer" aria-hidden="true">hides in 30s</span>
+        `;
+        vmCredPass.querySelector('.pw-copy')?.addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(pw); } catch { /* ignore */ }
+            const c = vmCredPass.querySelector('.pw-copy');
+            if (c) { c.textContent = 'Copied'; setTimeout(() => { c.textContent = 'Copy'; }, 1500); }
+        });
+        setTimeout(() => {
+            if (!vmCredPass) return;
+            vmCredPass.innerHTML = `<button type="button" id="vm-cred-reveal" class="button ghost reveal-btn">Reveal password</button>`;
+            document.getElementById('vm-cred-reveal')?.addEventListener('click', revealPassword);
+        }, 30000);
+    } catch (err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Reveal password'; }
+        alert(`Reveal failed: ${err.message}`);
+    }
+}
+
+async function deleteMyEnvironment() {
+    if (!confirm('Delete your entire environment? This removes the resource group and every VM, NIC, NSG, VNet, and public IP in it. The KV secret remains.')) {
+        return;
+    }
+    if (myVmsDelete) { myVmsDelete.disabled = true; myVmsDelete.textContent = 'Deleting…'; }
+    try {
+        const r = await apiFetch('/api/my-vms', { method: 'DELETE' });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        setVmStatus(`Delete submitted for ${data.rgName}. Resources will disappear over the next minute or two.`, false);
+        if (vmCredentials) vmCredentials.hidden = true;
+        currentRgName = ''; currentDeploymentId = '';
+        await refreshMyVms();
+    } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+    } finally {
+        if (myVmsDelete) { myVmsDelete.disabled = false; myVmsDelete.textContent = 'Delete environment'; }
+    }
 }
 
 // -------- My environments --------
@@ -317,6 +381,7 @@ async function refreshMyVms() {
 function renderMyVms(vms) {
     if (!myVmsList) return;
     myVmsList.innerHTML = '';
+    if (myVmsDelete) myVmsDelete.hidden = vms.length === 0;
     if (!vms.length) {
         myVmsEmpty.hidden = false;
         return;

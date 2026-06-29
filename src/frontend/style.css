@@ -565,11 +565,64 @@ body.re .json-box {
     color: #fff;
     flex: 1;
 }
-.my-vms-refresh {
+.my-vms-refresh,
+.my-vms-delete {
     min-height: 38px;
     padding: 0 16px;
     font-size: 13px;
 }
+.my-vms-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.my-vms-delete {
+    color: #fca5a5;
+    border-color: rgba(252, 165, 165, 0.35);
+}
+.my-vms-delete:hover:not(:disabled) {
+    background: rgba(252, 165, 165, 0.12);
+    border-color: rgba(252, 165, 165, 0.6);
+}
+
+/* ---- Credentials card: reveal password ---- */
+.reveal-btn {
+    min-height: 32px;
+    padding: 0 14px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+}
+.pw-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    color: #d8f8e3;
+    user-select: all;
+    margin-right: 8px;
+    word-break: break-all;
+}
+.pw-copy {
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+}
+.pw-timer {
+    margin-left: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: rgba(236, 237, 242, 0.45);
+    letter-spacing: 0.06em;
+}
+.kv-link {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #93c5fd;
+}
+.kv-link:hover { text-decoration: underline; }
 .my-vms-list {
     list-style: none;
     margin: 0;

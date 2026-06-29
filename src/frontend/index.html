@@ -120,6 +120,9 @@
                     <dt>VM name</dt><dd id="vm-cred-name">&mdash;</dd>
                     <dt>Username</dt><dd id="vm-cred-user">&mdash;</dd>
                     <dt>Public IP</dt><dd id="vm-cred-ip">&mdash;</dd>
+                    <dt>Password</dt><dd id="vm-cred-pass">
+                        <button type="button" id="vm-cred-reveal" class="button ghost reveal-btn">Reveal password</button>
+                    </dd>
                     <dt>Key Vault secret</dt><dd id="vm-cred-kv">&mdash;</dd>
                 </dl>
                 <p class="vm-creds-hint" id="vm-cred-hint"></p>
@@ -131,7 +134,10 @@
             <div class="my-vms-head">
                 <p class="eyebrow accent-on-dark">// your environments</p>
                 <h2 id="my-vms-title">Active environments</h2>
-                <button id="my-vms-refresh" class="button ghost my-vms-refresh" type="button">Refresh</button>
+                <div class="my-vms-actions">
+                    <button id="my-vms-refresh" class="button ghost my-vms-refresh" type="button">Refresh</button>
+                    <button id="my-vms-delete" class="button ghost my-vms-delete" type="button" hidden>Delete environment</button>
+                </div>
             </div>
             <ul id="my-vms-list" class="my-vms-list"></ul>
             <p id="my-vms-empty" class="my-vms-empty" hidden>No environments yet. Launch one above.</p>
