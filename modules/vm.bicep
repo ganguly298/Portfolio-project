@@ -51,7 +51,7 @@ var vnetName = 'vnet-${name}-${suffix}'
 var pipName = 'pip-${name}-${suffix}'
 var nsgName = 'nsg-${name}-${suffix}'
 var subnetName = 'default'
-var secretName = 'pass-${vmName}'
+var secretName = 'pass-${vmName}-${suffix}'
 
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
   name: vnetName
