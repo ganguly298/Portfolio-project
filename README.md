@@ -514,55 +514,55 @@ A signed-in user fills in a small form (VM name, region, admin password, "assign
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as Signed-in user
-    participant SPA as SPA (app.js)
-    participant API as CreateVm function
-    participant ARM as Azure Resource Manager
-    participant RG as Per-user RG (saurav-RG)
-    participant KV as Shared portfolio Key Vault
+    participant U as User
+    participant SPA as SPA
+    participant API as CreateVm
+    participant ARM as ARM
+    participant RG as PerUserRG
+    participant KV as KeyVault
 
-    U->>SPA: Fill form (vmName, region, password, publicIp?)
-    SPA->>SPA: MSAL acquireTokenSilent(apiScope)
-    SPA->>+API: POST /api/vm + Bearer token<br/>body: vmName, region, adminPassword, createPublicIp
+    U->>SPA: Fill form vmName region password publicIp
+    SPA->>SPA: MSAL acquireTokenSilent apiScope
+    SPA->>API: POST /api/vm with Bearer token
 
-    API->>API: extractUpn(req) -- saurav@contoso.com
-    API->>API: rgNameForUser -- saurav-RG
-    API->>API: sanitiseVmLabel -- mylab
-    API->>API: validatePassword -- ok
-    API->>ARM: resourceGroups.checkExistence(saurav-RG)
+    API->>API: extractUpn req returns saurav at contoso.com
+    API->>API: rgNameForUser returns saurav-RG
+    API->>API: sanitiseVmLabel returns mylab
+    API->>API: validatePassword ok
+    API->>ARM: resourceGroups.checkExistence saurav-RG
     alt RG already exists
         ARM-->>API: true
         API-->>SPA: 409 already have an active VM
     else clear to go
         ARM-->>API: false
-        API->>ARM: resourceGroups.createOrUpdate(saurav-RG)<br/>location=region, tags: owner, expiresAt now+2h, vmdemo=true
-        API->>ARM: deployments.beginCreateOrUpdate(saurav-RG, vm-mylab-TS)<br/>template.json + params: name, location, adminPassword, kvName, kvResourceGroup, createPublicIp
+        API->>ARM: resourceGroups.createOrUpdate saurav-RG with tags
+        API->>ARM: deployments.beginCreateOrUpdate template plus params
         ARM-->>API: 202 Accepted
-        API-->>-SPA: 202 deploymentId, rgName, expiresAt, pollUrl
+        API-->>SPA: 202 deploymentId rgName expiresAt pollUrl
     end
 
     Note over SPA,ARM: ARM continues server-side
-    ARM->>+RG: VNet + NIC + (optional PIP+NSG) + VM (Win11 25H2 Pro)
-    ARM->>KV: vmSecret module -- set secret pass-vm-mylab-SUFFIX
+    ARM->>RG: VNet plus NIC plus optional PIP and NSG plus VM
+    ARM->>KV: vmSecret module sets pass-vm-mylab-SUFFIX
     KV-->>ARM: ok
-    ARM-->>-RG: provisioningState = Succeeded
+    ARM-->>RG: provisioningState Succeeded
 
-    loop every 7s, up to 15 min
-        SPA->>API: GET /api/vm/deploymentId?rg=saurav-RG
+    loop every 7s up to 15 min
+        SPA->>API: GET /api/vm/deploymentId rg=saurav-RG
         API->>ARM: deployments.get
-        ARM-->>API: state + outputs
-        API-->>SPA: status + outputs
+        ARM-->>API: state and outputs
+        API-->>SPA: status and outputs
     end
 
-    SPA->>U: Done. Connect via Bastion / RDP to publicIp
+    SPA->>U: Done connect via Bastion or RDP to publicIp
     U->>SPA: click Reveal password
-    SPA->>API: GET /api/vm/deploymentId/credential?rg=saurav-RG
-    API->>API: re-derive rgNameForUser(upn) -- must match ?rg=
-    API->>ARM: deployments.get -- read kvSecretReference output
-    API->>KV: GET /secrets/pass-vm-mylab-SUFFIX (Bearer MI token, api-version 7.4)
+    SPA->>API: GET /api/vm/deploymentId/credential rg=saurav-RG
+    API->>API: re-derive rgNameForUser upn must match rg
+    API->>ARM: deployments.get read kvSecretReference output
+    API->>KV: GET secrets pass-vm-mylab-SUFFIX with Bearer MI token
     KV-->>API: secret value
     API-->>SPA: 200 password
-    SPA->>U: show password for 30s, then hide
+    SPA->>U: show password for 30s then hide
 ```
 
 ### Why the password path is safe
