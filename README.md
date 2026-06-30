@@ -17,31 +17,40 @@
 5. [Repository layout](#repository-layout)
 6. [Bicep module graph](#bicep-module-graph)
 7. [Communication flows](#communication-flows)
-8. [Deployment pipeline](#deployment-pipeline)
-9. [Quick start](#quick-start)
-10. [Testing](#testing)
-11. [Destroy / cleanup](#destroy--cleanup)
-12. [Why we migrated from Y1 Consumption to Flex Consumption](#why-we-migrated-from-y1-consumption-to-flex-consumption)
-13. [Cost model](#cost-model)
-14. [Troubleshooting](#troubleshooting)
-15. [What you'll learn](#what-youll-learn)
-16. [References](#references)
+8. [Research Environments — on-demand VMs](#research-environments--on-demand-vms)
+9. [Authentication (Entra ID + Easy Auth)](#authentication-entra-id--easy-auth)
+10. [Deployment pipeline](#deployment-pipeline)
+11. [Quick start](#quick-start)
+12. [Testing](#testing)
+13. [Destroy / cleanup](#destroy--cleanup)
+14. [Why we migrated from Y1 Consumption to Flex Consumption](#why-we-migrated-from-y1-consumption-to-flex-consumption)
+15. [Cost model](#cost-model)
+16. [Troubleshooting](#troubleshooting)
+17. [What you'll learn](#what-youll-learn)
+18. [References](#references)
 
 ---
 
 ## What this project does
 
-A tiny but complete cloud application for a personal portfolio website. Once deployed, you get:
+A tiny but complete cloud application for a personal portfolio website **plus a self-service "Research Environments" feature** that lets signed-in users spin up their own disposable Windows&nbsp;11 VM in Azure. Once deployed, you get:
 
 - A **static portfolio site** served from Azure Storage's `$web` container (HTTPS, free).
-- A **live HTTPS API** with two endpoints on Azure Functions:
+- A **live HTTPS API** on Azure Functions with the following endpoints:
 
-| Endpoint | Method | What it does |
-|---|---|---|
-| `/api/profile` | `GET` | Returns your profile (name, title, about, skills, github, linkedin) as JSON. |
-| `/api/contact` | `POST` | Accepts `{name, email, message}`, saves it to Table Storage, and notifies a Logic App workflow. |
+| Endpoint | Method | Auth | What it does |
+|---|---|---|---|
+| `/api/profile` | `GET` | anonymous | Returns your profile (name, title, about, skills, github, linkedin) as JSON. |
+| `/api/visitors` | `POST` | anonymous | Increments + returns a global visitor counter (Table Storage). |
+| `/api/contact` | `POST` | anonymous | Accepts `{name, email, message}`, saves it to Table Storage, notifies a Logic App. |
+| `/api/vm` | `POST` | Entra user | Provisions a Windows&nbsp;11 VM into the caller's per-user RG. |
+| `/api/vm/{deploymentId}` | `GET` | Entra user | Polls the ARM deployment for status + outputs. |
+| `/api/vm/{deploymentId}/credential` | `GET` | Entra user | Reveals the admin password by reading it from Key Vault on the user's behalf. |
+| `/api/my-vms` | `GET` | Entra user | Lists VMs in the caller's per-user RG with power state + public IP. |
+| `/api/my-vms` | `DELETE` | Entra user | Deletes the caller's entire per-user RG (all VM resources). |
+| *(timer)* `CleanupExpiredVms` | hourly | system | Deletes any per-user RG whose `expiresAt` tag is in the past (2-hour TTL). |
 
-The frontend calls both endpoints to render the portfolio and handle the contact form. No servers to manage, no VMs to patch.
+The frontend calls these endpoints to render the portfolio, handle the contact form, and run the full VM lifecycle. **No servers to manage, no VMs to patch — and VMs auto-evict after 2 hours so nothing lingers on the bill.**
 
 **What this project teaches**
 
@@ -210,18 +219,26 @@ All resources live inside one resource group (default `rg-portfolio-dev`) in **C
 - **Cost:** free for the first 5 GB/month.
 - **Defined in:** [modules/monitoring.bicep](modules/monitoring.bicep)
 
-### 6. RBAC role assignments — *the trust*
+### 6. VM modules (deployed at runtime, not at IaC time) — *the Research Environments engine*
+
+These two modules are **not** referenced from `main.bicep`. They live inside the Function App's deployment package and are submitted as an inline ARM template by `CreateVm` whenever a signed-in user launches a VM:
+
+- **[modules/vm.bicep](modules/vm.bicep)** — A self-contained ephemeral demo VM. Creates `vnet-<name>-<suffix>`, `nic-<name>-<suffix>`, optional `pip-<name>-<suffix>` + `nsg-<name>-<suffix>` (with RDP 3389 allow rule), and a `vm-<name>` Windows&nbsp;11 25H2 Pro `Standard_B2s_v2` with TrustedLaunch enabled. The compiled JSON lives at [src/api/CreateVm/template.json](src/api/CreateVm/template.json) so the function can ship it without depending on Bicep at runtime.
+- **[modules/vmSecret.bicep](modules/vmSecret.bicep)** — Cross-RG sub-module called from `vm.bicep` that writes the user-supplied admin password into the **shared portfolio Key Vault** as secret `pass-vm-<name>-<suffix>`. The VM lives in the user's per-user RG; the secret lives in the central KV so the same Function MI (which already has `Key Vault Secrets User`) can read it back on demand.
+
+### 7. RBAC role assignments — *the trust*
 
 These are why no secrets are needed at runtime:
 
-| Module | Role | Scope |
-|---|---|---|
-| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Blob Data Owner | Storage Account |
-| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Queue Data Contributor | Storage Account |
-| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Table Data Contributor | Storage Account |
-| [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep) | Key Vault Secrets User | Key Vault |
+| Module | Role | Scope | Why |
+|---|---|---|---|
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Blob Data Owner | Storage Account | Flex Consumption pulls the app package from `deployment-package` via MI. |
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Queue Data Contributor | Storage Account | Functions host uses queues for internal coordination. |
+| [modules/storageRoleAssignment.bicep](modules/storageRoleAssignment.bicep) | Storage Table Data Contributor | Storage Account | `GetProfile`, `SubmitContact`, `IncrementVisitor` read/write tables. |
+| [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep) | Key Vault Secrets User | Key Vault | Resolves `APP_SECRET` reference + lets `GetVmCredential` read VM passwords. |
+| [main.bicep](main.bicep) (inline) | Contributor | Subscription | Lets `CreateVm` / `DeleteMyVms` create + delete per-user RGs and deploy ARM templates into them. |
 
-All four are bound to the Function App's MI principal ID. Role assignment names use `guid(scope, principal, role)` so re-deploys are idempotent.
+All are bound to the Function App's MI principal ID. Role assignment names use `guid(scope, principal, role)` so re-deploys are idempotent.
 
 **Total cost for deploy → test → destroy: ~$0.00.**
 
@@ -474,6 +491,144 @@ sequenceDiagram
 ```
 
 > The same MI + the same RBAC roles cover both the user-code data path (your `profiles` / `contacts` table reads/writes) and the platform's internal `AzureWebJobsStorage` traffic. There is **no `AzureWebJobsStorage` connection-string app setting** in this project.
+
+---
+
+## Research Environments — on-demand VMs
+
+A signed-in user fills in a small form (VM name, region, admin password, "assign public IP?") and gets back a working Windows 11 VM in their own resource group, with the admin password retrievable later from Key Vault. The whole thing auto-evicts after 2 hours.
+
+### The four inputs and where they come from
+
+| Input | Source | Submitted as | Server-side use |
+|---|---|---|---|
+| **VM name** | user types `<input name="vmName" pattern="[a-zA-Z0-9]{2,12}">` ([src/frontend/index.html](src/frontend/index.html#L63-L73)) | `payload.vmName` in `POST /api/vm` body | `sanitiseVmLabel()` lowercases + strips non-alphanumeric + caps at 12 chars ([src/api/CreateVm/index.js](src/api/CreateVm/index.js#L51-L54)). Becomes ARM template `name` param → `vm-<name>` hostname + `pass-vm-<name>-<suffix>` KV secret. |
+| **Region** | user picks from a `<select name="region">` with 5 options ([src/frontend/index.html](src/frontend/index.html#L83-L91)) | `payload.region` | Validated against `ALLOWED_REGIONS` ([src/api/CreateVm/index.js](src/api/CreateVm/index.js#L20)). Used as **both** the per-user RG `location` and the ARM template `location` parameter so the VNet/NIC/VM land together. |
+| **Admin password** | user types `<input name="adminPassword" type="password" minlength="12" maxlength="72">` ([src/frontend/index.html](src/frontend/index.html#L98-L107)); cleared from the DOM after submit ([src/frontend/app.js](src/frontend/app.js#L256)) | `payload.adminPassword` (HTTPS only) | `validatePassword()` enforces Azure's rules — 12–72 chars, 3 of 4 character classes, blocks `password`/`admin`/`demouser` ([src/api/CreateVm/index.js](src/api/CreateVm/index.js#L60-L72)). Passed as ARM `securestring` parameter `adminPassword` → applied to `osProfile.adminPassword` **and** written to KV as `pass-vm-<name>-<suffix>` by [modules/vmSecret.bicep](modules/vmSecret.bicep). |
+| **Resource group** | **NOT** from the frontend | — | Derived server-side from your Entra UPN: `rgNameForUser(upn) = <localpart-stripped>.slice(0,20) + '-RG'` ([src/api/CreateVm/index.js](src/api/CreateVm/index.js#L46-L49)). One RG per user. Every per-user endpoint (`/api/vm`, `/api/my-vms`, `/api/vm/{id}/credential`) re-derives this name from the Easy Auth header and ignores whatever RG the client may have sent — so users can't act on each other's environments. |
+
+> **Why derive the RG?** Two reasons. **Isolation:** each user gets one RG, so listing / deleting is just "act on `<my>-RG`". **Quota:** the 409 `You already have an active VM` in [src/api/CreateVm/index.js](src/api/CreateVm/index.js#L101-L107) is enforced by `checkExistence(rgName)` — no need to query inventory.
+
+### End-to-end sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Signed-in user
+    participant SPA as SPA (app.js)
+    participant API as CreateVm function
+    participant ARM as Azure Resource Manager
+    participant RG as Per-user RG (e.g. saurav-RG)
+    participant KV as Shared portfolio Key Vault
+
+    U->>SPA: Fill form (vmName, region, password, publicIp?)
+    SPA->>SPA: MSAL acquireTokenSilent(apiScope)
+    SPA->>+API: POST /api/vm  + Bearer <token><br/>{ vmName, region, adminPassword, createPublicIp }
+
+    API->>API: extractUpn(req)  ─►  saurav@contoso.com
+    API->>API: rgNameForUser    ─►  saurav-RG
+    API->>API: sanitiseVmLabel  ─►  mylab
+    API->>API: validatePassword ─►  ok
+    API->>ARM: resourceGroups.checkExistence("saurav-RG")
+    alt RG already exists
+        ARM-->>API: true
+        API-->>SPA: 409 { error:"already have an active VM" }
+    else clear to go
+        ARM-->>API: false
+        API->>ARM: resourceGroups.createOrUpdate("saurav-RG",<br/>{ location: region,<br/>  tags: { owner, expiresAt: now+2h, vmdemo:true } })
+        API->>ARM: deployments.beginCreateOrUpdate("saurav-RG",<br/>"vm-mylab-<ts>", template.json,<br/>params: { name, location, adminPassword,<br/>          kvName, kvResourceGroup, createPublicIp })
+        ARM-->>API: 202 Accepted
+        API-->>-SPA: 202 { deploymentId, rgName, expiresAt, pollUrl }
+    end
+
+    Note over SPA,ARM: ARM continues server-side
+    ARM->>+RG: VNet + NIC + (PIP+NSG) + VM (Win11 25H2 Pro)
+    ARM->>KV: vmSecret module — set secret pass-vm-mylab-<suffix>
+    KV-->>ARM: ok
+    ARM-->>-RG: provisioningState = Succeeded
+
+    loop every 7s, up to 15 min
+        SPA->>API: GET /api/vm/{deploymentId}?rg=saurav-RG
+        API->>ARM: deployments.get(...)
+        ARM-->>API: { state, outputs }
+        API-->>SPA: { status, outputs }
+    end
+
+    SPA->>U: "Done. Connect via Bastion / RDP to <ip>"
+    U->>SPA: click "Reveal password"
+    SPA->>API: GET /api/vm/{deploymentId}/credential?rg=saurav-RG
+    API->>API: re-derive rgNameForUser(upn) → must match ?rg=
+    API->>ARM: deployments.get → kvSecretReference output
+    API->>KV: GET /secrets/pass-vm-mylab-<suffix>?api-version=7.4<br/>(Bearer MI token)
+    KV-->>API: { value }
+    API-->>SPA: 200 { password }
+    SPA->>U: show password for 30s, then hide
+```
+
+### Why the password path is safe
+
+- The browser never touches Key Vault directly — there is no KV data-plane role on the user.
+- The Function App's MI has `Key Vault Secrets User` (granted by [modules/kvRoleAssignment.bicep](modules/kvRoleAssignment.bicep)), so it can read any secret in the vault.
+- The function gates the read on `rgNameForUser(upn) === ?rg=` ([src/api/GetVmCredential/index.js](src/api/GetVmCredential/index.js#L55-L58)), so user A cannot read user B's `pass-vm-*` secret by guessing the deployment id.
+- The deployment output `kvSecretReference` is just the URL of the secret, not the value — the value is fetched only on the credential endpoint.
+
+### Why we ship the compiled ARM JSON, not the Bicep
+
+[src/api/CreateVm/template.json](src/api/CreateVm/template.json) is the `bicep build` output of [modules/vm.bicep](modules/vm.bicep). The Function App needs to **submit** the template via the ARM SDK, and the ARM REST API speaks JSON only. Shipping the JSON means the function package has zero Bicep tooling at runtime. When you change `modules/vm.bicep`, regenerate the JSON:
+
+```powershell
+bicep build .\modules\vm.bicep --outfile .\src\api\CreateVm\template.json
+```
+
+### TTL: how VMs auto-evict
+
+`CreateVm` tags the per-user RG with `expiresAt = <ISO timestamp 2h from now>`. The hourly `CleanupExpiredVms` timer ([src/api/CleanupExpiredVms/function.json](src/api/CleanupExpiredVms/function.json)) lists RGs tagged `vmdemo=true`, parses each `expiresAt`, and deletes any that are in the past. The frontend reflects this with the "auto-deletes in 2 hours" hint.
+
+---
+
+## Authentication (Entra ID + Easy Auth)
+
+Optional. Enabled when `deploy.ps1` or the pipeline is run with `-EnableEntraAuth`. Without it, the per-user VM endpoints will refuse all calls because there is no `x-ms-client-principal` header to extract a UPN from.
+
+| Layer | What it does |
+|---|---|
+| **Frontend app reg** (`entraFrontendClientId`) | The SPA's MSAL `PublicClientApplication`. On "Sign in" it does `loginPopup({ scopes: [apiScope] })` and stores the resulting account in `sessionStorage` ([src/frontend/app.js](src/frontend/app.js#L68-L97)). Redirect URI = the static-site URL. |
+| **API app reg** (`entraApiClientId`) | Exposes `api://<api-client-id>/access_as_user` (`entraApiScope`). The SPA acquires tokens for this scope and sends them as `Authorization: Bearer …` on every `/api/*` call ([src/frontend/app.js](src/frontend/app.js#L156-L170)). |
+| **App Service Easy Auth v2** | Configured on the Function App with `aadClientId = <api-client-id>`, `aadIssuer = https://login.microsoftonline.com/<tenant>/v2.0`, `unauthAction = Return401`. Validates the Bearer token, then injects the verified principal as the base64 header `x-ms-client-principal` for the function code to read. |
+| **Function code** | `extractUpn(req)` (identical helper in `CreateVm`, `ListMyVms`, `DeleteMyVms`, `GetVmCredential`) decodes that header and pulls the UPN claim. Returns `null` (→ 401) if the header is absent — which is exactly what happens if Easy Auth is off. |
+
+### What changes when you re-run without `-EnableEntraAuth`
+
+| Feature | Auth ON (current) | Auth OFF |
+|---|---|---|
+| `/api/profile`, `/api/visitors`, `/api/contact` | 200 (Bearer required by Easy Auth, supplied by SPA) | 200 (no token needed) |
+| Sign-in / Sign-out button | Working (talks to Entra) | UI works but the token is never used |
+| `/api/vm`, `/api/my-vms`, `/api/vm/{id}/credential` | 200 with the user's UPN | **401** — `extractUpn(req)` returns `null` because Easy Auth no longer injects the header |
+
+### How to turn it on/off
+
+```powershell
+# Turn ON
+.\deploy.ps1 -ResourceGroup rg-portfolio-dev -Location centralindia `
+             -EnableEntraAuth -EntraTenantId <tenant> `
+             -EntraFrontendClientId <spa-app-id> `
+             -EntraApiClientId <api-app-id> `
+             -EntraApiScope api://<api-app-id>/access_as_user
+
+# Turn OFF (omit the flag — the script removes the auth settings)
+.\deploy.ps1 -ResourceGroup rg-portfolio-dev -Location centralindia
+```
+
+The same toggles exist on the [azure-pipelines.yml](azure-pipelines.yml) parameters.
+
+### Verify the current state
+
+```powershell
+az rest --method GET --uri "https://management.azure.com/subscriptions/<sub>/resourceGroups/rg-portfolio-dev/providers/Microsoft.Web/sites/<func>/config/authsettingsV2?api-version=2023-12-01" `
+        --query "properties.{enabled:platform.enabled, unauthAction:globalValidation.unauthenticatedClientAction, aadClientId:identityProviders.azureActiveDirectory.registration.clientId}"
+```
+
+> `az webapp auth show` queries the **v1** API and returns nulls for v2-only settings. Always use `authsettingsV2` for Easy Auth v2.
 
 ---
 
